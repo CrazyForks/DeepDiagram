@@ -39,6 +39,7 @@ def router_node(state: AgentState):
     - 'mindmap': for creating NEW mind maps or MODIFYING existing ones.
     - 'flow': for creating NEW flowcharts or MODIFYING existing ones.
     - 'charts': for creating NEW data visualizations or MODIFYING existing ones.
+    - 'drawio': for creating Draw.io diagrams, architecture diagrams, UML, or network simple.
     - 'general': only for completely unrelated topics (e.g. "Write a poem", "Hello").
     
     Output ONLY the category name.
@@ -59,32 +60,20 @@ def router_node(state: AgentState):
     
     print(f"DEBUG ROUTER | Context: {active_context} | Raw Intent: {intent}")
 
-    # Heuristic Fallback: If router says "general" but we have an active diagram and modification keywords
-    if "general" in intent and active_context != "None":
-        last_msg = messages[-1].content.lower()
-        keywords = ["add", "remove", "change", "update", "modify", "delete", "insert", "+", "-", "plus", "minus", "reduce", "increase", "set", "make"]
-        
-        if any(k in last_msg for k in keywords):
-            print(f"DEBUG ROUTER | Overriding 'general' to Active Context based on keywords")
-            if "Chart" in active_context:
-                intent = "charts"
-            elif "Flowchart" in active_context:
-                intent = "flow"
-            elif "Mindmap" in active_context:
-                intent = "mindmap"
-
     if "mindmap" in intent:
         return {"intent": "mindmap"}
     elif "flow" in intent:
         return {"intent": "flow"}
     elif "chart" in intent:
         return {"intent": "charts"}
+    elif "drawio" in intent or "draw.io" in intent or "architecture" in intent or "network" in intent:
+        return {"intent": "drawio"} 
     elif "general" in intent:
         return {"intent": "general"}
     else:
         return {"intent": "general"} # Default to general for safety
 
-def route_decision(state: AgentState) -> Literal["mindmap_agent", "flow_agent", "charts_agent", "general_agent"]:
+def route_decision(state: AgentState) -> Literal["mindmap_agent", "flow_agent", "charts_agent", "drawio_agent", "general_agent"]:
     intent = state.get("intent")
     if intent == "mindmap":
         return "mindmap_agent"
@@ -92,6 +81,8 @@ def route_decision(state: AgentState) -> Literal["mindmap_agent", "flow_agent", 
         return "flow_agent"
     elif intent == "charts":
         return "charts_agent"
+    elif intent == "drawio":
+        return "drawio_agent"
     elif intent == "general":
         return "general_agent"
     return "general_agent"

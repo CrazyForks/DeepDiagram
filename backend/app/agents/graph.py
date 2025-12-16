@@ -2,20 +2,22 @@ from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from app.state.state import AgentState
 from app.agents.dispatcher import router_node, route_decision
-from app.agents.mindmap import mindmap_agent_node, tools as mindmap_tools
-from app.agents.flow import flow_agent_node, tools as flow_tools
-from app.agents.charts import charts_agent_node, tools as charts_tools
-from app.agents.general import general_agent_node
+from app.agents.mindmap import mindmap_agent_node as mindmap_agent, tools as mindmap_tools
+from app.agents.flow import flow_agent_node as flow_agent, tools as flow_tools
+from app.agents.charts import charts_agent_node as charts_agent, tools as charts_tools
+from app.agents.drawio import drawio_agent, tools as drawio_tools
+from app.agents.general import general_agent_node as general_agent
 
 # Define the graph
 workflow = StateGraph(AgentState)
 
 # Add nodes
 workflow.add_node("router", router_node)
-workflow.add_node("mindmap_agent", mindmap_agent_node)
-workflow.add_node("flow_agent", flow_agent_node)
-workflow.add_node("charts_agent", charts_agent_node)
-workflow.add_node("general_agent", general_agent_node)
+workflow.add_node("mindmap_agent", mindmap_agent)
+workflow.add_node("flow_agent", flow_agent)
+workflow.add_node("charts_agent", charts_agent)
+workflow.add_node("drawio_agent", drawio_agent)
+workflow.add_node("general_agent", general_agent)
 
 # Tool Nodes
 # We need to register tool nodes if we want the graph to actually execute tools.
@@ -34,6 +36,9 @@ workflow.add_node("mindmap_tools", mindmap_tool_node)
 workflow.add_node("flow_tools", flow_tool_node)
 workflow.add_node("charts_tools", charts_tool_node)
 
+drawio_tool_node = ToolNode(drawio_tools)
+workflow.add_node("drawio_tools", drawio_tool_node)
+
 # Entry point
 workflow.set_entry_point("router")
 
@@ -45,6 +50,7 @@ workflow.add_conditional_edges(
         "mindmap_agent": "mindmap_agent",
         "flow_agent": "flow_agent",
         "charts_agent": "charts_agent",
+        "drawio_agent": "drawio_agent",
         "general_agent": "general_agent"
     }
 )
@@ -81,6 +87,14 @@ workflow.add_conditional_edges(
     {"continue": "charts_tools", "end": END}
 )
 workflow.add_edge("charts_tools", "charts_agent")
+
+# Drawio Loop
+workflow.add_conditional_edges(
+    "drawio_agent",
+    should_continue,
+    {"continue": "drawio_tools", "end": END}
+)
+workflow.add_edge("drawio_tools", "drawio_agent")
 
 # General Agent (No tools, just ends)
 workflow.add_edge("general_agent", END)
