@@ -2,6 +2,8 @@
 
 **DeepDiagram AI** is an open-source, intelligent visualization platform that leverages **Agentic AI** to transform natural language into professional diagrams. Unlike traditional tools, DeepDiagram employs a multi-agent architecture where specialized agents handle different visualization domains—from interactive mind maps to complex data charts.
 
+![DeepDiagram AI Demo](./images/20251222-152234.gif)
+
 ---
 
 ## 🚀 Features
@@ -141,3 +143,9 @@ Visit `http://localhost:5173` to start using DeepDiagram AI.
 - [ ] chat history 
 - [ ] new chat   
 - [ ] other file upload
+
+---
+
+## 📄 License
+
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. See the [LICENSE](LICENSE) file for details.
