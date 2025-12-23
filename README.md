@@ -140,9 +140,9 @@ Visit `http://localhost:5173` to start using DeepDiagram AI.
 - [x] Standalone Mermaid Agent
 - [x] Resizable Dashboard Layout
 - [x] Enhanced Message Actions & Copy Logic
-- [ ] chat history 
-- [ ] new chat   
-- [ ] other file upload
+- [ ] Persistent Session & Chat History
+- [ ] One-Click Session Refresh (New Chat)
+- [ ] Extended Multimodal Support (PDF, Docx, etc.) for Context Parsing
 
 ---
 
