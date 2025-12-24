@@ -47,6 +47,11 @@
 - **Context-Aware**: Automatically routes requests to the best agent based on intent using a ReAct-based orchestration layer.
 - **Multimodal**: Supports image uploads. Upload a whiteboard photo or a sketch, and DeepDiagram AI will digitize it.
 
+### 📜 Persistent History & Branching
+- **Session Management**: maintain multiple chat sessions with automatic state restoration (including diagrams and process traces).
+- **Message Branching**: retry assistant responses to explore different visualization paths. Navigate between versions via built-in pagination.
+- **Robust Storage**: Powered by PostgreSQL to ensure high reliability for complex technical traces and multimodal content.
+
 ---
 
 ## ✨ User Interface Enhancements
@@ -103,7 +108,7 @@ graph TD
 ## 🛠 Tech Stack
 
 - **Frontend**: React 19, Vite, TypeScript, TailwindCSS, Zustand, React Flow, Mind-elixir, react-resizable-panels.
-- **Backend**: Python 3.10+, FastAPI, LangGraph, LangChain, DeepSeek/OpenAI.
+- **Backend**: Python 3.10+, FastAPI, LangGraph, LangChain, PostgreSQL (SQLModel), DeepSeek/OpenAI.
 - **Package Manager**: `uv` (Python), `npm` (Node.js).
 
 ---
@@ -149,8 +154,9 @@ Visit `http://localhost:5173` to start using DeepDiagram AI.
 - [x] Standalone Mermaid Agent
 - [x] Resizable Dashboard Layout
 - [x] Enhanced Message Actions & Copy Logic
-- [ ] Persistent Session & Chat History
-- [ ] One-Click Session Refresh (New Chat)
+- [x] Persistent Session & Chat History
+- [x] Message Branching & Versioning Logic
+- [x] One-Click Session Refresh (New Chat)
 - [ ] Extended Multimodal Support (PDF, Docx, etc.) for Context Parsing
 
 ---

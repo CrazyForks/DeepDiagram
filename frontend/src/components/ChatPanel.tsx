@@ -1,7 +1,8 @@
 import { useRef, useEffect, useState } from 'react';
 import {
     Send, Loader2, X, Copy, RotateCcw, Check, Command, Square,
-    Workflow, Network, Code2, BarChart3, PenTool, AlertCircle, Paperclip
+    Workflow, Network, Code2, BarChart3, PenTool, AlertCircle, Paperclip,
+    History, Plus, Trash2, MessageSquare, ChevronDown, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { useChatStore } from '../store/chatStore';
 import { cn } from '../lib/utils';
@@ -68,9 +69,15 @@ export const ChatPanel = () => {
         addStepToLastMessage,
         updateLastStepContent,
         setStreamingCode,
-        setMessages,
         toast,
-        clearToast
+        clearToast,
+        sessions,
+        allMessages,
+        loadSessions,
+        selectSession,
+        createNewChat,
+        deleteSession,
+        switchMessageVersion
     } = useChatStore();
 
     // Auto-clear toast
@@ -85,11 +92,90 @@ export const ChatPanel = () => {
     const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
     const [showMentions, setShowMentions] = useState(false);
     const [mentionFilter, setMentionFilter] = useState('');
+    const [showHistory, setShowHistory] = useState(false);
+    const historyRef = useRef<HTMLDivElement>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+
+    const handleCopy = (msg: Message, index: number) => {
+        let textToCopy = msg.content;
+        if (!textToCopy.trim() && msg.steps) {
+            textToCopy = msg.steps
+                .filter((s: Step) => !!s.content)
+                .map((s: Step) => {
+                    const prefix = s.type === 'tool_start' ? 'Calling ' + (s.name || '') + ': ' : s.type === 'tool_end' ? 'Result: ' : '';
+                    return prefix + (s.content || '') + ' ';
+                })
+                .join('\n\n');
+        }
+        if (textToCopy) {
+            navigator.clipboard.writeText(textToCopy);
+            setCopiedIndex(index);
+            setTimeout(() => setCopiedIndex(null), 2000);
+        }
+    };
+
+    const handleRetry = (index: number) => {
+        if (isLoading) return;
+        const msgs = [...messages];
+        let retryPrompt = '';
+        let retryImages: string[] = [];
+        let parentId: number | undefined = undefined;
+        let sliceIndex = 0;
+
+        if (msgs[index].role === 'user') {
+            retryPrompt = msgs[index].content;
+            retryImages = msgs[index].images || [];
+            parentId = msgs[index].parent_id || undefined;
+            sliceIndex = index + 1; // Branch from this user message
+        } else {
+            for (let i = index - 1; i >= 0; i--) {
+                if (msgs[i].role === 'user') {
+                    retryPrompt = msgs[i].content;
+                    retryImages = msgs[i].images || [];
+                    parentId = msgs[i].id; // The assistant's parent is the user message
+                    sliceIndex = i + 1; // Branch from this user message
+                    break;
+                }
+            }
+        }
+        if (retryPrompt || retryImages.length > 0) {
+            // Slice the visual list to the branching point before triggering new generation
+            useChatStore.setState({ messages: msgs.slice(0, sliceIndex) });
+            void triggerSubmit(retryPrompt, retryImages, parentId, true);
+        }
+    };
+
+    // Listen for cross-component retry requests (e.g. from Canvas)
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const index = (e as CustomEvent).detail?.index;
+            if (typeof index === 'number') {
+                handleRetry(index);
+            }
+        };
+        window.addEventListener('deepdiagram-retry', handler);
+        return () => window.removeEventListener('deepdiagram-retry', handler);
+    }, [messages, isLoading]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    // Initial load
+    useEffect(() => {
+        void loadSessions();
+    }, []);
+
+    // Close dropdowns on outside click
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (historyRef.current && !historyRef.current.contains(event.target as Node)) {
+                setShowHistory(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -213,7 +299,7 @@ export const ChatPanel = () => {
         }
     };
 
-    const triggerSubmit = async (customPrompt?: string, customImages?: string[]) => {
+    const triggerSubmit = async (customPrompt?: string, customImages?: string[], parentId?: number, isRetry?: boolean) => {
         const promptToUse = customPrompt ?? input;
         const imagesToUse = customImages ?? [...inputImages];
 
@@ -226,9 +312,14 @@ export const ChatPanel = () => {
             setCurrentCode(''); // Clear stale code from previous turn
         }
 
-        addMessage({ role: 'user', content: promptToUse, images: imagesToUse });
+        // Use parentId from arguments, or the ID of the last message if not retrying
+        const effectiveParentId = parentId ?? (messages.length > 0 ? messages[messages.length - 1].id : null);
+
+        if (!isRetry) {
+            addMessage({ role: 'user', content: promptToUse, images: imagesToUse, parent_id: effectiveParentId });
+        }
         setLoading(true);
-        addMessage({ role: 'assistant', content: '' });
+        addMessage({ role: 'assistant', content: '', parent_id: effectiveParentId }); // Mark the parent specifically for branching
 
         let thoughtBuffer = "";
         let toolArgsBuffer = "";
@@ -244,7 +335,9 @@ export const ChatPanel = () => {
                     prompt: promptToUse,
                     images: imagesToUse,
                     session_id: sessionId,
-                    context: { current_code: currentCode }
+                    context: { current_code: currentCode },
+                    parent_id: effectiveParentId,
+                    is_retry: isRetry
                 }),
                 signal: abortControllerRef.current.signal
             });
@@ -275,6 +368,29 @@ export const ChatPanel = () => {
 
                             if (eventName === 'session_created') {
                                 setSessionId(data.session_id);
+                                void loadSessions(); // Refresh list when new session is created
+                            } else if (eventName === 'message_created') {
+                                // Update the ID of the last user or assistant message
+                                useChatStore.setState((state) => {
+                                    const msgs = [...state.messages];
+                                    const allMsgs = [...state.allMessages];
+
+                                    // Find the last message that matches the role and update its ID
+                                    const lastMatchIdx = [...msgs].reverse().findIndex(m => m.role === data.role);
+                                    if (lastMatchIdx !== -1) {
+                                        const actualIdx = msgs.length - 1 - lastMatchIdx;
+                                        msgs[actualIdx].id = data.id;
+
+                                        // Also update in allMessages - find the matching message object by role and missing ID
+                                        // Since we append to allMessages, the last one with this role and no ID is likely it
+                                        const lastAllMatchIdx = [...allMsgs].reverse().findIndex(m => m.role === data.role && !m.id);
+                                        if (lastAllMatchIdx !== -1) {
+                                            allMsgs[allMsgs.length - 1 - lastAllMatchIdx].id = data.id;
+                                        }
+                                    }
+
+                                    return { messages: msgs, allMessages: allMsgs };
+                                });
                             } else if (eventName === 'agent_selected') {
                                 setAgent(data.agent);
                                 addStepToLastMessage({
@@ -381,6 +497,92 @@ export const ChatPanel = () => {
                     </h1>
                     <p className="text-xs text-slate-500 mt-1">Describe what you want to create or upload an image.</p>
                 </div>
+
+                <div className="flex items-center gap-2">
+                    {/* New Chat Button */}
+                    <button
+                        onClick={() => createNewChat()}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20 active:scale-95"
+                    >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>New Chat</span>
+                    </button>
+
+                    {/* History Dropdown */}
+                    <div className="relative" ref={historyRef}>
+                        <button
+                            onClick={() => setShowHistory(!showHistory)}
+                            className={cn(
+                                "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all",
+                                showHistory
+                                    ? "bg-slate-100 border-slate-300 text-slate-800"
+                                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                            )}
+                        >
+                            <History className="w-3.5 h-3.5" />
+                            <span>History</span>
+                            <ChevronDown className={cn("w-3 h-3 transition-transform duration-200", showHistory && "rotate-180")} />
+                        </button>
+
+                        {showHistory && (
+                            <div className="absolute right-0 mt-2 w-80 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200/50 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Recent Chats</span>
+                                    <History className="w-3 h-3 text-slate-300" />
+                                </div>
+                                <div className="max-h-[400px] overflow-y-auto p-1 custom-scrollbar">
+                                    {sessions.length === 0 ? (
+                                        <div className="p-8 text-center text-slate-400 text-xs">
+                                            No chat history yet
+                                        </div>
+                                    ) : (
+                                        sessions.map((session) => (
+                                            <div
+                                                key={session.id}
+                                                className={cn(
+                                                    "group flex items-center gap-3 p-2.5 rounded-xl hover:bg-blue-50/50 text-left transition-all cursor-pointer",
+                                                    sessionId === session.id ? "bg-blue-50/80 border-blue-100" : "transparent"
+                                                )}
+                                                onClick={() => {
+                                                    void selectSession(session.id);
+                                                    setShowHistory(false);
+                                                }}
+                                            >
+                                                <div className={cn(
+                                                    "p-2 rounded-lg transition-colors",
+                                                    sessionId === session.id ? "bg-blue-100/50 text-blue-600" : "bg-slate-100 text-slate-400 group-hover:bg-white group-hover:text-blue-500"
+                                                )}>
+                                                    <MessageSquare className="w-4 h-4" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className={cn(
+                                                        "text-sm font-semibold truncate",
+                                                        sessionId === session.id ? "text-blue-700" : "text-slate-700 group-hover:text-blue-700"
+                                                    )}>
+                                                        {session.title || "New Chat"}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                                        {new Date(session.updated_at).toLocaleDateString()} • {new Date(session.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        void deleteSession(session.id);
+                                                    }}
+                                                    className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                    title="Delete chat"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
 
             {/* Global Toast */}
@@ -411,46 +613,24 @@ export const ChatPanel = () => {
                         return null;
                     }
 
-                    const handleCopy = (msg: Message, index: number) => {
-                        let textToCopy = msg.content;
-                        if (!textToCopy.trim() && msg.steps) {
-                            textToCopy = msg.steps
-                                .filter((s: Step) => !!s.content)
-                                .map((s: Step) => {
-                                    const prefix = s.type === 'tool_start' ? 'Calling ' + (s.name || '') + ': ' : s.type === 'tool_end' ? 'Result: ' : '';
-                                    return prefix + (s.content || '') + ' ';
-                                })
-                                .join('\n\n');
-                        }
-                        if (textToCopy) {
-                            navigator.clipboard.writeText(textToCopy);
-                            setCopiedIndex(index);
-                            setTimeout(() => setCopiedIndex(null), 2000);
-                        }
+                    const switchVersion = (msg: Message, delta: number) => {
+                        if (isLoading) return; // Prevent switching while loading
+                        const siblings = allMessages.filter(m => m.parent_id === msg.parent_id && m.role === msg.role);
+                        if (siblings.length <= 1) return;
+
+                        const currentIdx = siblings.findIndex(s => s.id === msg.id);
+                        if (currentIdx === -1) return; // Should not happen if data is consistent
+
+                        const nextIdx = (currentIdx + delta + siblings.length) % siblings.length;
+                        const targetId = siblings[nextIdx].id;
+                        if (targetId) switchMessageVersion(targetId);
                     };
 
-                    const handleRetry = (index: number) => {
-                        if (isLoading) return;
-                        const msgs = [...messages];
-                        let retryPrompt = '';
-                        let retryImages: string[] = [];
-                        if (msgs[index].role === 'user') {
-                            retryPrompt = msgs[index].content;
-                            retryImages = msgs[index].images || [];
-                            setMessages(msgs.slice(0, index));
-                        } else {
-                            for (let i = index - 1; i >= 0; i--) {
-                                if (msgs[i].role === 'user') {
-                                    retryPrompt = msgs[i].content;
-                                    retryImages = msgs[i].images || [];
-                                    setMessages(msgs.slice(0, i));
-                                    break;
-                                }
-                            }
-                        }
-                        if (retryPrompt || retryImages.length > 0) {
-                            void triggerSubmit(retryPrompt, retryImages);
-                        }
+                    const getVersionInfo = (msg: Message) => {
+                        const siblings = allMessages.filter(m => m.parent_id === msg.parent_id && m.role === msg.role);
+                        if (siblings.length <= 1) return null;
+                        const currentIdx = siblings.findIndex(s => s.id === msg.id);
+                        return { current: currentIdx + 1, total: siblings.length };
                     };
 
                     return (
@@ -470,7 +650,7 @@ export const ChatPanel = () => {
                                 )}
                             >
                                 {msg.steps && msg.steps.length > 0 && (
-                                    <ExecutionTrace steps={msg.steps} messageIndex={idx} />
+                                    <ExecutionTrace steps={msg.steps} messageIndex={idx} onRetry={() => handleRetry(idx)} />
                                 )}
                                 <ReactMarkdown
                                     components={{
@@ -487,6 +667,30 @@ export const ChatPanel = () => {
                                         ))}
                                     </div>
                                 )}
+
+                                {getVersionInfo(msg) && (
+                                    <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100/50">
+                                        <div className="flex items-center bg-slate-50 rounded-lg p-0.5 border border-slate-100">
+                                            <button
+                                                onClick={() => switchVersion(msg, -1)}
+                                                disabled={isLoading}
+                                                className="p-1 hover:bg-white hover:text-blue-600 rounded-md transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                            >
+                                                <ChevronLeft className="w-3 h-3" />
+                                            </button>
+                                            <span className="text-[10px] font-bold px-2 text-slate-500 min-w-[3rem] text-center">
+                                                {getVersionInfo(msg)?.current} / {getVersionInfo(msg)?.total}
+                                            </span>
+                                            <button
+                                                onClick={() => switchVersion(msg, 1)}
+                                                disabled={isLoading}
+                                                className="p-1 hover:bg-white hover:text-blue-600 rounded-md transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                            >
+                                                <ChevronRight className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div className={cn(
                                 "flex items-center gap-1 mt-1.5 px-2 transition-opacity duration-200",
@@ -494,7 +698,8 @@ export const ChatPanel = () => {
                             )}>
                                 <button
                                     onClick={() => handleCopy(msg, idx)}
-                                    className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
+                                    disabled={isLoading}
+                                    className="p-1 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                                     title="Copy content"
                                 >
                                     {copiedIndex === idx ? (
@@ -506,11 +711,24 @@ export const ChatPanel = () => {
                                 {msg.role === 'assistant' && (
                                     <button
                                         onClick={() => handleRetry(idx)}
-                                        className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
+                                        disabled={isLoading}
+                                        className="p-1 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                                         title="Retry/Regenerate"
                                     >
                                         <RotateCcw className="w-3.5 h-3.5" />
                                     </button>
+                                )}
+                                {msg.created_at && (
+                                    <span className="text-[10px] text-slate-300 ml-1 font-medium select-none whitespace-nowrap">
+                                        {new Date(msg.created_at).toLocaleString([], {
+                                            year: 'numeric',
+                                            month: '2-digit',
+                                            day: '2-digit',
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            hour12: false
+                                        })}
+                                    </span>
                                 )}
                             </div>
                         </div>

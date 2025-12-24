@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useChatStore } from '../store/chatStore';
-import { Download, RotateCcw } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { Download, RotateCcw, RefreshCw } from 'lucide-react';
 import { MindmapAgent } from './agents/MindmapAgent';
 import { FlowAgent } from './agents/FlowAgent';
 import { ChartsAgent } from './agents/ChartsAgent';
@@ -9,7 +10,7 @@ import { MermaidAgent } from './agents/MermaidAgent';
 import type { AgentRef } from './agents/types';
 
 export const CanvasPanel = () => {
-    const { activeAgent, currentCode } = useChatStore();
+    const { activeAgent, currentCode, isLoading } = useChatStore();
     const [showDownloadMenu, setShowDownloadMenu] = useState(false);
     const agentRef = useRef<AgentRef>(null);
 
@@ -26,6 +27,21 @@ export const CanvasPanel = () => {
         }
     };
 
+    const handleRegenerate = () => {
+        // Find the last assistant message in the store
+        const { messages } = useChatStore.getState();
+        const lastAssistantIdx = [...messages].reverse().findIndex(m => m.role === 'assistant');
+        if (lastAssistantIdx !== -1) {
+            const actualIdx = messages.length - 1 - lastAssistantIdx;
+            // The handleRetry logic is in ChatPanel. We could move it to store,
+            // but for now, we can trigger it via a custom event or store action.
+            // Since we want to be clean, let's just use the existing handleRetry if possible.
+            // Wait, I don't have handleRetry here. 
+            // Better: use a custom event or a store-managed retry trigger.
+            window.dispatchEvent(new CustomEvent('deepdiagram-retry', { detail: { index: actualIdx } }));
+        }
+    };
+
     const useZoomWrapper = activeAgent === 'flowchart' || activeAgent === 'mindmap';
 
     return (
@@ -38,8 +54,12 @@ export const CanvasPanel = () => {
                         {/* Download Button (File Icon) */}
                         <div className="relative">
                             <button
-                                onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-                                className={`text-slate-700 hover:text-blue-600 transition-colors duration-200 ${showDownloadMenu ? 'text-blue-600' : ''}`}
+                                onClick={() => !isLoading && setShowDownloadMenu(!showDownloadMenu)}
+                                disabled={isLoading}
+                                className={cn(
+                                    "transition-colors duration-200 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed",
+                                    showDownloadMenu ? "text-blue-600" : "text-slate-700 hover:text-blue-600"
+                                )}
                                 title="Download"
                             >
                                 <Download className="w-5 h-5" />
@@ -56,12 +76,23 @@ export const CanvasPanel = () => {
                         {useZoomWrapper && (
                             <button
                                 onClick={handleResetView}
-                                className="text-slate-700 hover:text-blue-600 transition-colors duration-200"
+                                disabled={isLoading}
+                                className="text-slate-700 hover:text-blue-600 transition-colors duration-200 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                                 title="Reset View"
                             >
                                 <RotateCcw className="w-5 h-5" />
                             </button>
                         )}
+
+                        {/* Regenerate Button */}
+                        <button
+                            onClick={handleRegenerate}
+                            disabled={isLoading}
+                            className="text-slate-700 hover:text-blue-600 transition-colors duration-200 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Regenerate Diagram"
+                        >
+                            <RefreshCw className={cn("w-5 h-5", isLoading && "animate-spin")} />
+                        </button>
                     </div>
 
                     <div className="w-full h-full">

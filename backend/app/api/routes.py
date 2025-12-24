@@ -9,6 +9,7 @@ from app.services.chat import ChatService
 import json
 from typing import AsyncGenerator
 from app.core.logger import logger
+from datetime import datetime
 
 router = APIRouter()
 
@@ -19,6 +20,8 @@ class ChatRequest(BaseModel):
     images: list[str] = []
     history: list[dict] = []
     context: dict = {}
+    parent_id: int | None = None
+    is_retry: bool = False
 
 async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenerator[str, None]:
     chat_service = ChatService(db)
@@ -30,8 +33,21 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
         session_id = chat_session.id
         yield f"event: session_created\ndata: {json.dumps({'session_id': session_id})}\n\n"
     
-    # 2. Save User Message
-    await chat_service.add_message(session_id, "user", request.prompt)
+    # 2. Manage User Message
+    last_user_msg_id = None
+    if request.is_retry and request.parent_id:
+        # If retrying, the parent_id IS the user message we are retrying
+        last_user_msg_id = request.parent_id
+    else:
+        # Save new User Message
+        user_msg = await chat_service.add_message(
+            session_id, "user", request.prompt, 
+            images=request.images,
+            parent_id=request.parent_id
+        )
+        last_user_msg_id = user_msg.id
+    
+    yield f"event: message_created\ndata: {json.dumps({'id': last_user_msg_id, 'role': 'user'})}\n\n"
     
     # 3. Load History
     history = await chat_service.get_history(session_id)
@@ -92,6 +108,8 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
     }
     
     full_response_content = ""
+    accumulated_steps = []
+    selected_agent = None
 
     try:
         # Stateless execution: No thread_id, so it runs fresh with provided history
@@ -116,26 +134,29 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
                 output = data.get("output")
                 if output and "intent" in output:
                     intent = output["intent"]
+                    selected_agent = intent
                     yield f"event: agent_selected\ndata: {json.dumps({'agent': intent})}\n\n"
+                    
+                    # Also add a pseudo-step for history
+                    accumulated_steps.append({
+                        "type": "agent_select",
+                        "name": intent,
+                        "status": "done",
+                        "timestamp": int(datetime.utcnow().timestamp() * 1000)
+                    })
             
             if event_type == "on_chat_model_stream":
                 chunk = data.get("chunk")
                 if chunk:
                     content = chunk.content
                     if content:
-                        # Determine if this stream is from a tool generating code
-                        # Tool nodes in graph.py are named e.g. "mindmap_tools"
                         is_tool_stream = node_name.endswith("_tools")
-                        
                         if is_tool_stream:
-                            # Stream as code, do NOT save to chat history
                             yield f"event: tool_code\ndata: {json.dumps({'content': content})}\n\n"
                         else:
-                            # 1. Content Stream (Thinking)
                             full_response_content += content
                             yield f"event: thought\ndata: {json.dumps({'content': content})}\n\n"
                     
-                    # 2. Tool Args Stream (Agent calling the tool)
                     if hasattr(chunk, 'tool_call_chunks'):
                         for tool_chunk in chunk.tool_call_chunks or []:
                             if tool_chunk and tool_chunk.get('args'):
@@ -143,24 +164,50 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
                                 yield f"event: tool_args_stream\ndata: {json.dumps({'args': args_chunk})}\n\n"
 
             elif event_type == "on_tool_start":
-                logger.info(f"Tool started: {event['name']} with input: {data.get('input')}")
+                # Add tool start step
+                step = {
+                    "type": "tool_start",
+                    "name": event["name"],
+                    "content": json.dumps(data.get("input")),
+                    "status": "running",
+                    "timestamp": int(datetime.utcnow().timestamp() * 1000)
+                }
+                accumulated_steps.append(step)
                 yield f"event: tool_start\ndata: {json.dumps({'tool': event['name'], 'input': data.get('input')})}\n\n"
 
             elif event_type == "on_tool_end":
                 output = data.get('output')
-                logger.info(f"Tool ended: {event['name']} with output type: {type(output)}")
                 if hasattr(output, 'content'):
                     output = output.content
-                elif isinstance(output, (dict, list, str, int, float, bool, type(None))):
-                    pass # Already serializable
-                else:
+                elif not isinstance(output, (dict, list, str, int, float, bool, type(None))):
                     output = str(output)
-                logger.info(f"Final tool output (truncated): {str(output)[:100]}...")
+                
+                # Update steps
+                if accumulated_steps:
+                    accumulated_steps.append({
+                        "type": "tool_end",
+                        "name": "Result",
+                        "content": output if isinstance(output, str) else json.dumps(output),
+                        "status": "done",
+                        "timestamp": int(datetime.utcnow().timestamp() * 1000)
+                    })
+                    for s in reversed(accumulated_steps):
+                        if s["type"] == "tool_start" and s["status"] == "running":
+                            s["status"] = "done"
+                            break
+
                 yield f"event: tool_end\ndata: {json.dumps({'output': output})}\n\n"
         
         # 4. Save Assistant Message
-        if full_response_content:
-            await chat_service.add_message(session_id, "assistant", full_response_content)
+        if full_response_content or accumulated_steps:
+            assistant_msg = await chat_service.add_message(
+                session_id, "assistant", 
+                full_response_content, 
+                steps=accumulated_steps,
+                agent=selected_agent,
+                parent_id=last_user_msg_id
+            )
+            yield f"event: message_created\ndata: {json.dumps({'id': assistant_msg.id, 'role': 'assistant'})}\n\n"
             
     except Exception as e:
         import traceback
@@ -172,3 +219,21 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
 @router.post("/chat/completions")
 async def chat_completions(request: ChatRequest, db: AsyncSession = Depends(get_session)):
     return StreamingResponse(event_generator(request, db), media_type="text/event-stream")
+
+@router.get("/sessions")
+async def list_sessions(db: AsyncSession = Depends(get_session)):
+    chat_service = ChatService(db)
+    sessions = await chat_service.get_all_sessions()
+    return sessions
+
+@router.get("/sessions/{session_id}")
+async def get_session_history(session_id: int, db: AsyncSession = Depends(get_session)):
+    chat_service = ChatService(db)
+    history = await chat_service.get_history(session_id)
+    return history
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: int, db: AsyncSession = Depends(get_session)):
+    chat_service = ChatService(db)
+    await chat_service.delete_session(session_id)
+    return {"status": "success"}

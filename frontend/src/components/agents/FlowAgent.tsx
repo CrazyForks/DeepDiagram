@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
+import { useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import ReactFlow, {
     Background,
@@ -11,13 +11,31 @@ import ReactFlow, {
     getTransformForBounds,
     Handle,
     Position,
+    MarkerType,
     type Connection
 } from 'reactflow';
+import { cn } from '../../lib/utils';
+import { Play, Flag, Box, HelpCircle } from 'lucide-react';
 import 'reactflow/dist/style.css';
 import { toPng, toSvg } from 'html-to-image';
 import type { AgentRef } from './types';
 
-const EditableNode = ({ data, id, isConnectable }: any) => {
+// Global styles to strip default React Flow node styling
+const nodeResetStyles = `
+    .react-flow__node {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        transform-origin: center center !important;
+    }
+    .react-flow__edge-path {
+        stroke-width: 2.5;
+    }
+`;
+
+const BaseCardNode = ({ data, id, children, className, icon: Icon, colorClass, accentColor }: any) => {
     const [editing, setEditing] = useState(false);
     const [value, setValue] = useState(data.label);
 
@@ -32,38 +50,167 @@ const EditableNode = ({ data, id, isConnectable }: any) => {
         }
     };
 
-    const onKeyDown = (e: any) => {
-        if (e.key === 'Enter') {
+    const handleKeyDown = (e: any) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
             onBlur();
         }
     };
 
     return (
         <div
-            className="px-4 py-2 shadow-sm rounded-md bg-white border border-slate-300 min-w-[100px] text-center hover:border-blue-400 transition-colors"
+            className={cn(
+                "relative bg-white border border-slate-200 shadow-xl transition-all duration-300 pointer-events-auto group overflow-hidden",
+                className
+            )}
             onDoubleClick={() => setEditing(true)}
         >
-            <Handle type="target" position={Position.Top} isConnectable={isConnectable} style={{ background: '#94a3b8' }} />
-            {editing ? (
-                <input
-                    autoFocus
-                    className="w-full text-center outline-none bg-transparent text-sm font-medium text-slate-700"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    onBlur={onBlur}
-                    onKeyDown={onKeyDown}
-                />
-            ) : (
-                <div className="text-sm font-medium text-slate-700 select-none cursor-text">{data.label}</div>
+            {/* Left Accent Bar */}
+            <div className={cn("absolute left-0 top-0 bottom-0 w-1.5", accentColor)} />
+
+            <div className="relative z-10 flex items-start gap-3 p-4">
+                {Icon && (
+                    <div className={cn("mt-1 p-1.5 rounded-lg bg-slate-50", colorClass)}>
+                        <Icon className="w-4 h-4" />
+                    </div>
+                )}
+
+                <div className="flex-1 min-w-0">
+                    {editing ? (
+                        <textarea
+                            autoFocus
+                            rows={2}
+                            className="w-full text-sm font-bold text-slate-900 bg-transparent outline-none resize-none"
+                            value={value}
+                            onChange={(e) => setValue(e.target.value)}
+                            onBlur={onBlur}
+                            onKeyDown={handleKeyDown}
+                        />
+                    ) : (
+                        <div className="text-sm font-bold text-slate-800 whitespace-pre-wrap break-words leading-snug select-none">
+                            {data.label}
+                        </div>
+                    )}
+                </div>
+            </div>
+            {children}
+        </div>
+    );
+};
+
+const ProcessNode = (props: any) => (
+    <BaseCardNode
+        {...props}
+        icon={Box}
+        colorClass="text-blue-600"
+        accentColor="bg-blue-600"
+        className="rounded-2xl min-w-[200px] max-w-[280px]"
+    >
+        <Handle type="target" position={Position.Top} className="!w-2 !h-2 !bg-blue-600 !border-2 !border-white" />
+        <Handle type="source" position={Position.Bottom} className="!w-2 !h-2 !bg-blue-600 !border-2 !border-white" />
+    </BaseCardNode>
+);
+
+const LifecycleNode = ({ data, id, children, className, icon: Icon, colorClass, borderColor }: any) => {
+    const [editing, setEditing] = useState(false);
+    const [value, setValue] = useState(data.label);
+
+    const onBlur = () => {
+        setEditing(false);
+        if (data.onChange) data.onChange(id, value);
+    };
+
+    return (
+        <div
+            className={cn(
+                "relative bg-white border-2 px-8 py-4 shadow-lg transition-all duration-300 pointer-events-auto",
+                borderColor,
+                className
             )}
-            <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} style={{ background: '#94a3b8' }} />
+            onDoubleClick={() => setEditing(true)}
+        >
+            <div className="flex items-center gap-3">
+                {Icon && <Icon className={cn("w-5 h-5", colorClass)} />}
+                {editing ? (
+                    <input
+                        autoFocus
+                        className="text-sm font-black text-slate-900 bg-transparent outline-none uppercase tracking-widest"
+                        value={value}
+                        onChange={(e) => setValue(e.target.value)}
+                        onBlur={onBlur}
+                    />
+                ) : (
+                    <div className="text-sm font-black text-slate-900 select-none uppercase tracking-widest">
+                        {data.label}
+                    </div>
+                )}
+            </div>
+            {children}
+        </div>
+    );
+};
+
+const StartNode = (props: any) => (
+    <LifecycleNode {...props} icon={Play} colorClass="text-emerald-600" borderColor="border-emerald-600" className="rounded-full">
+        <Handle type="source" position={Position.Bottom} className="!w-2.5 !h-2.5 !bg-emerald-600 !border-2 !border-white" />
+    </LifecycleNode>
+);
+
+const EndNode = (props: any) => (
+    <LifecycleNode {...props} icon={Flag} colorClass="text-rose-600" borderColor="border-rose-600" className="rounded-full">
+        <Handle type="target" position={Position.Top} className="!w-2.5 !h-2.5 !bg-rose-600 !border-2 !border-white" />
+    </LifecycleNode>
+);
+
+const DecisionNode = (props: any) => {
+    const { data, id } = props;
+    const [editing, setEditing] = useState(false);
+    const [value, setValue] = useState(data.label);
+
+    const onBlur = () => {
+        setEditing(false);
+        if (data.onChange) data.onChange(id, value);
+    };
+
+    return (
+        <div className="relative w-44 h-44 flex items-center justify-center pointer-events-auto" onDoubleClick={() => setEditing(true)}>
+            {/* SVG Diamond for precision */}
+            <svg width="100%" height="100%" viewBox="0 0 100 100" className="absolute inset-0 drop-shadow-2xl">
+                <polygon points="50,4 96,50 50,96 4,50" fill="white" stroke="#f59e0b" strokeWidth="2.5" />
+            </svg>
+
+            <div className="relative z-10 text-center px-8 w-full flex flex-col items-center">
+                <HelpCircle className="w-6 h-6 mb-2 text-amber-500 opacity-60" />
+                {editing ? (
+                    <textarea
+                        autoFocus
+                        rows={2}
+                        className="w-full text-center outline-none bg-transparent text-xs font-black text-slate-900 resize-none leading-tight"
+                        value={value}
+                        onChange={(e) => setValue(e.target.value)}
+                        onBlur={onBlur}
+                    />
+                ) : (
+                    <div className="text-xs font-black text-slate-900 leading-snug whitespace-pre-wrap break-words select-none px-2 uppercase tracking-tight">
+                        {data.label}
+                    </div>
+                )}
+            </div>
+
+            <Handle type="target" position={Position.Top} className="!w-2.5 !h-2.5 !bg-amber-500 !border-2 !border-white !-top-1.5" />
+            <Handle type="source" position={Position.Bottom} id="bottom" className="!w-2.5 !h-2.5 !bg-amber-500 !border-2 !border-white !-bottom-1.5" />
+            <Handle type="source" position={Position.Left} id="left" className="!w-2.5 !h-2.5 !bg-amber-500 !border-2 !border-white !-left-1.5" />
+            <Handle type="source" position={Position.Right} id="right" className="!w-2.5 !h-2.5 !bg-amber-500 !border-2 !border-white !-right-1.5" />
         </div>
     );
 };
 
 const nodeTypes = {
-    editable: EditableNode,
-    default: EditableNode,
+    start: StartNode,
+    end: EndNode,
+    process: ProcessNode,
+    decision: DecisionNode,
+    default: ProcessNode,
 };
 
 export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
@@ -75,10 +222,21 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
 
     const onConnect = (params: Connection) => setEdges((eds) => addEdge(params, eds));
 
+    const handleNodeLabelChange = (id: string, newLabel: string) => {
+        setNodes((nds) =>
+            nds.map((n) => {
+                if (n.id === id) {
+                    return { ...n, data: { ...n.data, label: newLabel } };
+                }
+                return n;
+            })
+        );
+    };
+
     useImperativeHandle(ref, () => ({
-        handleDownload: async (type: 'png' | 'svg') => {
-            const nodes = getNodes();
-            const nodesRect = getRectOfNodes(nodes);
+        handleDownload: async (exportType: 'png' | 'svg') => {
+            const currentNodes = getNodes();
+            const nodesRect = getRectOfNodes(currentNodes);
             const padding = 150;
             const width = nodesRect.width + padding * 2;
             const height = nodesRect.height + padding * 2;
@@ -96,7 +254,7 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
             };
 
             const exportOptions = {
-                backgroundColor: '#fff',
+                backgroundColor: '#ffffff',
                 width: width,
                 height: height,
                 pixelRatio: 2,
@@ -108,47 +266,17 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
                         viewport.style.transformOrigin = '0 0';
                     }
 
-                    // Manually clone markers (arrowheads) into the viewport SVG
                     const originalDefs = document.querySelector('.react-flow svg defs');
                     const clonedSvg = clonedDoc.querySelector('svg');
                     if (originalDefs && clonedSvg) {
-                        const newDefs = originalDefs.cloneNode(true);
-                        clonedSvg.prepend(newDefs);
+                        clonedSvg.prepend(originalDefs.cloneNode(true));
                     }
-
-                    // Surgical cleanup: ONLY target problematic elements to avoid breaking lines
-                    const bgs = clonedDoc.querySelectorAll('.react-flow__edge-textbg');
-                    bgs.forEach((el: any) => {
-                        el.removeAttribute('filter');
-                        el.removeAttribute('mask');
-                        el.style.filter = 'none';
-                        el.style.fill = '#ffffff';
-                        el.style.fillOpacity = '1';
-                    });
-
-                    const texts = clonedDoc.querySelectorAll('.react-flow__edge-text');
-                    texts.forEach((el: any) => {
-                        el.removeAttribute('filter');
-                        el.style.filter = 'none';
-                    });
-
-                    // Ensure edge paths are visible
-                    const paths = clonedDoc.querySelectorAll('.react-flow__edge-path');
-                    paths.forEach((el: any) => {
-                        el.style.strokeOpacity = '1';
-                        el.style.stroke = '#94a3b8';
-                        el.style.strokeWidth = '2';
-                    });
 
                     const style = clonedDoc.createElement('style');
                     style.innerHTML = `
-                        .react-flow__handle, .react-flow__background, .react-flow__controls, .react-flow__attribution {
+                        ${nodeResetStyles}
+                        .react-flow__handle, .react-flow__controls, .react-flow__attribution {
                             display: none !important;
-                        }
-                        .react-flow__node {
-                            background: white !important;
-                            border: 1px solid #cbd5e1 !important;
-                            box-shadow: none !important;
                         }
                         * {
                             font-family: 'Inter, system-ui, sans-serif' !important;
@@ -168,7 +296,7 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
                 }
             };
 
-            if (type === 'png') {
+            if (exportType === 'png') {
                 const dataUrl = await toPng(flowElement, exportOptions);
                 downloadFile(dataUrl, 'png');
             } else {
@@ -177,20 +305,9 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
             }
         },
         resetView: () => {
-            fitView({ padding: 0.2 });
+            fitView({ padding: 0.2, duration: 800 });
         }
     }));
-
-    const handleNodeLabelChange = (id: string, newLabel: string) => {
-        setNodes((nds) =>
-            nds.map((n) => {
-                if (n.id === id) {
-                    return { ...n, data: { ...n.data, label: newLabel } };
-                }
-                return n;
-            })
-        );
-    };
 
     // Sync React Flow state back to currentCode
     useEffect(() => {
@@ -211,7 +328,7 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
                 isInternalUpdate.current = false;
                 return;
             }
-            if (isStreamingCode) return; // Wait for tool completion
+            if (isStreamingCode) return;
 
             try {
                 let jsonStr = currentCode;
@@ -221,14 +338,29 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
                 }
                 const data = JSON.parse(jsonStr);
                 if (data.nodes && Array.isArray(data.nodes)) {
-                    const processedNodes = data.nodes.map((n: any) => ({
-                        ...n,
-                        type: 'editable',
-                        data: {
-                            ...n.data,
-                            onChange: handleNodeLabelChange
+                    // V4 STRUCTURAL FIX: Sanitize and Fix AI garbage
+                    const processedNodes = data.nodes.map((n: any) => {
+                        // 1. Force valid types
+                        let type = n.type || 'process';
+                        if (!nodeTypes[type as keyof typeof nodeTypes]) {
+                            type = 'process';
                         }
-                    }));
+
+                        // 2. STRIP AI-INJECTED STYLING & ROTATION
+                        const { style, className, ...rest } = n;
+
+                        return {
+                            ...rest,
+                            type,
+                            data: {
+                                ...n.data,
+                                onChange: handleNodeLabelChange
+                            },
+                            // 3. Reset any transform from style object
+                            style: {}
+                        };
+                    });
+
                     setNodes(processedNodes);
                     setEdges(data.edges || []);
                 }
@@ -239,7 +371,8 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
     }, [currentCode, isStreamingCode]);
 
     return (
-        <div className="w-full h-full">
+        <div className="w-full h-full bg-[#fcfcfc]">
+            <style>{nodeResetStyles}</style>
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -247,10 +380,21 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 nodeTypes={nodeTypes}
+                defaultEdgeOptions={{
+                    type: 'smoothstep',
+                    animated: true,
+                    style: { strokeWidth: 2, stroke: '#94a3b8' },
+                    markerEnd: {
+                        type: MarkerType.ArrowClosed,
+                        width: 20,
+                        height: 20,
+                        color: '#94a3b8',
+                    },
+                }}
                 fitView
                 fitViewOptions={{ padding: 0.2 }}
             >
-                <Background />
+                <Background color="#cbd5e1" gap={28} size={1} />
                 <Controls />
             </ReactFlow>
         </div>

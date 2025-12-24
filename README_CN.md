@@ -47,6 +47,11 @@
 - **上下文感知**: 基于 ReAct 的编排层，根据意图自动将请求路由到最佳智能体。
 - **多模态**: 支持图像上传。上传白板照片或草图，DeepDiagram AI 即可将其数字化。
 
+### 📜 持久化历史与版本分支
+- **会话管理**: 支持维护多个聊天会话，自动恢复状态（包括生成的图表、当前代码和执行过程回溯）。
+- **消息分支 (Branching)**: 助理响应支持“重试”并产生新分支。用户可以通过内置的分页控件在不同版本的可视化方案间灵活切换。
+- **可靠存储**: 采用 PostgreSQL 存储复杂的技术执行链路和多模态数据，确保长对话的稳定检索。
+
 ---
 
 ## ✨ 用户界面优化
@@ -103,7 +108,7 @@ graph TD
 ## 🛠 技术栈
 
 - **前端**: React 19, Vite, TypeScript, TailwindCSS, Zustand, React Flow, Mind-elixir, react-resizable-panels。
-- **后端**: Python 3.10+, FastAPI, LangGraph, LangChain, DeepSeek/OpenAI。
+- **后端**: Python 3.10+, FastAPI, LangGraph, LangChain, PostgreSQL (SQLModel), DeepSeek/OpenAI。
 - **包管理器**: `uv` (Python), `npm` (Node.js)。
 
 ---
@@ -149,8 +154,9 @@ npm run dev
 - [x] 独立的 Mermaid 智能体
 - [x] 可调节的任务栏布局
 - [x] 增强的消息操作与复制逻辑
-- [ ] 持久化会话与聊天历史管理
-- [ ] 一键新建会话 (上下文重置)
+- [x] 持久化会话与聊天历史管理
+- [x] 消息分支与多版本导航逻辑
+- [x] 一键新建会话 (上下文重置)
 - [ ] 增强型多模态：支持非图片文件 (PDF, Docx 等) 解析
 
 ---

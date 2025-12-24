@@ -18,9 +18,36 @@ class ChatService:
         result = await self.session.exec(statement)
         return result.first()
 
-    async def add_message(self, session_id: int, role: str, content: str) -> ChatMessage:
-        message = ChatMessage(session_id=session_id, role=role, content=content)
+    async def add_message(
+        self, 
+        session_id: int, 
+        role: str, 
+        content: str, 
+        images: list[str] | None = None,
+        steps: list[any] | None = None,
+        agent: str | None = None,
+        parent_id: int | None = None
+    ) -> ChatMessage:
+        message = ChatMessage(
+            session_id=session_id, 
+            role=role, 
+            content=content,
+            images=images,
+            steps=steps,
+            agent=agent,
+            parent_id=parent_id
+        )
         self.session.add(message)
+        
+        # Update session updated_at
+        from datetime import datetime
+        statement = select(ChatSession).where(ChatSession.id == session_id)
+        result = await self.session.exec(statement)
+        chat_session = result.first()
+        if chat_session:
+            chat_session.updated_at = datetime.utcnow()
+            self.session.add(chat_session)
+            
         await self.session.commit()
         await self.session.refresh(message)
         return message
@@ -29,3 +56,25 @@ class ChatService:
         statement = select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.created_at)
         result = await self.session.exec(statement)
         return result.all()
+
+    async def get_all_sessions(self):
+        statement = select(ChatSession).order_by(ChatSession.updated_at.desc())
+        result = await self.session.exec(statement)
+        return result.all()
+
+    async def delete_session(self, session_id: int):
+        # SQLModel/SQLAlchemy will handle cascade if configured, but let's be safe or just delete session
+        # Actually ChatMessage has foreign key to chatsession.id. 
+        # If we didn't specify ondelete="CASCADE" in models/chat.py, we should delete messages first.
+        
+        from sqlmodel import delete
+        
+        # Delete messages
+        msg_statement = delete(ChatMessage).where(ChatMessage.session_id == session_id)
+        await self.session.exec(msg_statement)
+        
+        # Delete session
+        sess_statement = delete(ChatSession).where(ChatSession.id == session_id)
+        await self.session.exec(sess_statement)
+        
+        await self.session.commit()

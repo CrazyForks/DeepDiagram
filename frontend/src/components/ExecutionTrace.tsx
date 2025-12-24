@@ -1,24 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
 import { cn } from '../lib/utils';
-import { BrainCircuit, Terminal, CheckCircle, ChevronDown, ChevronRight, Activity, Copy, Play, Check } from 'lucide-react';
+import { BrainCircuit, Terminal, CheckCircle, ChevronDown, ChevronRight, Activity, Copy, Play, Check, RotateCcw } from 'lucide-react';
 import { useChatStore } from '../store/chatStore';
 import type { Step } from '../types';
 
 interface ExecutionTraceProps {
     steps: Step[];
     messageIndex: number;
+    onRetry?: (index: number) => void;
 }
 
-const StepItem = ({ step, activeAgent, messageIndex, associatedResult }: {
+const StepItem = ({ step, activeAgent, messageIndex, associatedResult, onRetry }: {
     step: Step;
     activeAgent?: string;
     messageIndex: number;
     associatedResult?: { content: string; index: number };
+    onRetry?: (index: number) => void;
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
-    const { setCurrentCode, setAgent, setActiveStepRef } = useChatStore();
+    const { setCurrentCode, setAgent, setActiveStepRef, isLoading } = useChatStore();
 
     // Auto-expand when streaming starts, auto-collapse when finished if it's a tool_end/Result
     useEffect(() => {
@@ -107,21 +109,37 @@ const StepItem = ({ step, activeAgent, messageIndex, associatedResult }: {
                 )}
 
                 {step.type === 'agent_select' && associatedResult && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            if (activeAgent) {
-                                setAgent(activeAgent as any);
-                            }
-                            setActiveStepRef({ messageIndex, stepIndex: associatedResult.index });
-                            setCurrentCode(associatedResult.content);
-                        }}
-                        className="p-1 px-2 flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-all shadow-sm ml-2 cursor-pointer"
-                        title="Render Result"
-                    >
-                        <Play className="w-3 h-3 fill-current" />
-                        <span className="text-[10px] font-bold">Render</span>
-                    </button>
+                    <div className="flex items-center gap-1.5 ml-2">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (activeAgent) {
+                                    setAgent(activeAgent as any);
+                                }
+                                setActiveStepRef({ messageIndex, stepIndex: associatedResult.index });
+                                setCurrentCode(associatedResult.content);
+                            }}
+                            disabled={isLoading}
+                            className="p-1 px-2 flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Render Result"
+                        >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span className="text-[10px] font-bold">Render</span>
+                        </button>
+                        {onRetry && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRetry(messageIndex);
+                                }}
+                                disabled={isLoading}
+                                className="p-1 px-1.5 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-white rounded-md transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="Retry Generation"
+                            >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                    </div>
                 )}
             </div>
 
@@ -158,7 +176,7 @@ const StepItem = ({ step, activeAgent, messageIndex, associatedResult }: {
     );
 };
 
-export const ExecutionTrace = ({ steps, messageIndex }: ExecutionTraceProps) => {
+export const ExecutionTrace = ({ steps, messageIndex, onRetry }: ExecutionTraceProps) => {
     // Determine if we should show the block at all (if all steps are hidden 'general', don't show info)
     const hasVisibleSteps = steps.some(s => !(s.type === 'agent_select' && (s.name === 'general' || s.name === 'general_agent')));
 
@@ -201,9 +219,9 @@ export const ExecutionTrace = ({ steps, messageIndex }: ExecutionTraceProps) => 
                                         break;
                                     }
                                 }
-                                return <StepItem key={idx} step={step} activeAgent={lastAgent} messageIndex={messageIndex} associatedResult={associatedResult} />;
+                                return <StepItem key={idx} step={step} activeAgent={lastAgent} messageIndex={messageIndex} associatedResult={associatedResult} onRetry={onRetry} />;
                             }
-                            return <StepItem key={idx} step={step} activeAgent={lastAgent} messageIndex={messageIndex} />;
+                            return <StepItem key={idx} step={step} activeAgent={lastAgent} messageIndex={messageIndex} onRetry={onRetry} />;
                         });
                     })()}
                 </div>

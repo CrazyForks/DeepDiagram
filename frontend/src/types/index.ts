@@ -12,10 +12,21 @@ export interface Step {
 }
 
 export interface Message {
+    id?: number;
+    parent_id?: number | null;
     role: 'user' | 'assistant' | 'system';
     content: string;
     images?: string[];
     steps?: Step[]; // Execution trace
+    agent?: AgentType | string;
+    created_at?: string;
+}
+
+export interface ChatSession {
+    id: number;
+    title: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface ChartOption {
@@ -30,8 +41,11 @@ export interface ChatState {
     currentCode: string; // The code currently rendered (markdown, mermaid, or echarts json)
     isLoading: boolean;
     sessionId: number | null;
+    sessions: ChatSession[];
+    allMessages: Message[];
     inputImages: string[]; // Base64 data URLs
     isStreamingCode: boolean;
+    selectedVersions: Record<number, number>; // parentId -> selected messageId
 
     setInput: (input: string) => void;
     setAgent: (agent: AgentType) => void;
@@ -39,7 +53,7 @@ export interface ChatState {
     setCurrentCode: (code: string | ((prev: string) => string)) => void;
     setLoading: (loading: boolean) => void;
     setStreamingCode: (streaming: boolean) => void;
-    setSessionId: (id: number) => void;
+    setSessionId: (id: number | null) => void;
     setMessages: (messages: Message[]) => void;
     updateLastMessage: (content: string) => void;
     setInputImages: (images: string[]) => void;
@@ -54,4 +68,11 @@ export interface ChatState {
     toast: { message: string; type: 'error' | 'success' } | null;
     updateLastStepContent: (content: string, isStreaming?: boolean, status?: 'running' | 'done') => void;
     clearToast: () => void;
+
+    // Session management
+    loadSessions: () => Promise<void>;
+    selectSession: (sessionId: number) => Promise<void>;
+    createNewChat: () => void;
+    deleteSession: (sessionId: number) => Promise<void>;
+    switchMessageVersion: (messageId: number) => void;
 }

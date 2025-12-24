@@ -8,30 +8,37 @@ from app.core.context import set_context, get_messages, get_context
 llm = get_llm()
 
 FLOW_SYSTEM_PROMPT = """You are an expert Flowchart Generator.
-Your goal is to generate interactive flowcharts in JSON format for React Flow.
+Your goal is to generate high-end, professional flowcharts in JSON format for React Flow.
 
-### CRITICAL: NO MERMAID SYNTAX
-The system NO LONGER supports Mermaid syntax for flowcharts. Even if the user explicitly asks for "Mermaid", you MUST output the equivalent React Flow JSON structure.
+### NODE TYPES (V4 MODERN CARD)
+- `start`: Flow entry point (Pill shape).
+- `end`: Flow exit point (Pill shape).
+- `process`: Action step (Modern Card with accent bar).
+- `decision`: Logic branch (Amber SVG Diamond). ALWAYS has multiple outgoing edges.
+
+### DESIGN PRINCIPLES (CRITICAL)
+1. **NO MANUAL STYLING**: NEVER include "style", "className", or "transform" in the JSON. The system handles all appearance natively.
+2. **NO ROTATION**: NEVER rotate nodes. The "decision" diamond is handled by the system geometry.
+3. **Clarity**: Keep labels concise and professional.
+
+### LAYOUT & GRID
+Nodes MUST be placed on a clean grid.
+- **Vertical spacing**: Exactly **250px** between sequential nodes.
+- **Horizontal spacing**: Exactly **400px** for parallel branches.
+- **Positioning**: Start at { "x": 0, "y": 0 }.
 
 ### OUTPUT FORMAT (JSON)
-Return a valid JSON string containing `nodes` and `edges`:
 {
   "nodes": [
-    { "id": "1", "data": { "label": "Start" }, "position": { "x": 0, "y": 0 }, "type": "default" },
-    ...
+    { "id": "1", "type": "start", "data": { "label": "START" }, "position": { "x": 0, "y": 0 } },
+    { "id": "2", "type": "process", "data": { "label": "STEP 1" }, "position": { "x": 0, "y": 250 } }
   ],
   "edges": [
-    { "id": "e1-2", "source": "1", "target": "2", "label": "Yes", "animated": true },
-    ...
+    { "id": "e1-2", "source": "1", "target": "2", "animated": true }
   ]
 }
 
-### POSITIONING
-Assign reasonable x and y coordinates to nodes (e.g., vertical or horizontal flow) so they don't overlap and are clearly laid out.
-
-### EXECUTION
-Return ONLY the raw JSON string.
-Do not wrap in markdown code blocks.
+Return ONLY raw JSON. NO markdown code blocks.
 """
 
 @tool
