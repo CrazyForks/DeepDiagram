@@ -27,6 +27,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres_password@db:5432/deepdiagram
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - MODEL_ID=${MODEL_ID}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL}
       - LANGCHAIN_TRACING_V2=false

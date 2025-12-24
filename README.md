@@ -144,6 +144,7 @@ Create a `.env` file in the root directory with your API keys:
 ```env
 OPENAI_API_KEY=your_key_here
 OPENAI_BASE_URL=https://api.openai.com
+MODEL_ID=claude-sonnet-3.7 (Optional, defaults to claude-sonnet-3.7)
 DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 ```

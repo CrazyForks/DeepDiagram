@@ -19,8 +19,13 @@ class Settings:
     # DATABASE
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/deepdiagram")
 
+    MAX_TOKENS: int = int(os.getenv("MAX_TOKENS", 1024*16))
+
     # DeepSeek
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
     DEEPSEEK_BASE_URL: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    
+    # Model Selection
+    MODEL_ID: str = os.getenv("MODEL_ID", "")
 
 settings = Settings()

@@ -144,6 +144,7 @@ npm run dev
 ```env
 OPENAI_API_KEY=your_key_here
 OPENAI_BASE_URL=https://api.openai.com
+MODEL_ID=claude-sonnet-3.7 (可选，默认为 claude-sonnet-3.7)
 DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 ```
