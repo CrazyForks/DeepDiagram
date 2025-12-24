@@ -1,9 +1,10 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import { Transformer } from 'markmap-lib';
 import type { AgentRef } from './types';
 import MindElixir from 'mind-elixir';
 import 'mind-elixir/style.css';
+import { AlertCircle } from 'lucide-react';
 
 // Helper to strip HTML and decode entities
 const stripHtmlAndDecode = (html: string) => {
@@ -43,6 +44,7 @@ export const MindmapAgent = forwardRef<AgentRef>((_, ref) => {
     const { currentCode, isStreamingCode, setCurrentCode } = useChatStore();
     const mindmapRef = useRef<HTMLDivElement>(null);
     const mindmapInstanceRef = useRef<any>(null);
+    const [error, setError] = useState<string | null>(null);
     const isInternalUpdate = useRef(false);
 
     useImperativeHandle(ref, () => ({
@@ -87,44 +89,62 @@ export const MindmapAgent = forwardRef<AgentRef>((_, ref) => {
             return;
         }
 
-        const transformer = new Transformer();
-        const { root } = transformer.transform(currentCode);
-        const data = {
-            nodeData: convertToMindElixir(root)
-        };
+        try {
+            setError(null);
+            const transformer = new Transformer();
+            const { root } = transformer.transform(currentCode);
+            const data = {
+                nodeData: convertToMindElixir(root)
+            };
 
-        if (!mindmapInstanceRef.current) {
-            const me = new MindElixir({
-                el: mindmapRef.current,
-                direction: MindElixir.SIDE,
-                draggable: true,
-                editable: true,
-            });
-            me.init(data);
+            if (!mindmapInstanceRef.current) {
+                const me = new MindElixir({
+                    el: mindmapRef.current,
+                    direction: MindElixir.SIDE,
+                    draggable: true,
+                    editable: true,
+                });
+                me.init(data);
 
-            setTimeout(() => {
-                me.scaleFit();
-                me.toCenter();
-            }, 0);
+                setTimeout(() => {
+                    me.scaleFit();
+                    me.toCenter();
+                }, 0);
 
-            me.bus.addListener('operation', () => {
-                const newData = me.getData();
-                const md = convertToMarkdown(newData.nodeData);
-                isInternalUpdate.current = true;
-                setCurrentCode(md);
-            });
+                me.bus.addListener('operation', () => {
+                    const newData = me.getData();
+                    const md = convertToMarkdown(newData.nodeData);
+                    isInternalUpdate.current = true;
+                    setCurrentCode(md);
+                });
 
-            mindmapInstanceRef.current = me;
-        } else {
-            mindmapInstanceRef.current.init(data);
-            if (isStreamingCode) {
-                mindmapInstanceRef.current.scaleFit();
-                mindmapInstanceRef.current.toCenter();
+                mindmapInstanceRef.current = me;
+            } else {
+                mindmapInstanceRef.current.init(data);
+                if (isStreamingCode) {
+                    mindmapInstanceRef.current.scaleFit();
+                    mindmapInstanceRef.current.toCenter();
+                }
             }
+            useChatStore.getState().reportSuccess();
+        } catch (err) {
+            console.error("Mindmap render error", err);
+            const msg = err instanceof Error ? err.message : "Failed to render mindmap";
+            setError(msg);
+            useChatStore.getState().reportError(msg);
         }
     };
 
     useEffect(() => {
+        if (!currentCode) {
+            // Clear mindmap if code is empty
+            if (mindmapInstanceRef.current && mindmapRef.current) {
+                mindmapInstanceRef.current.init({ nodeData: { topic: "...", id: "root", children: [] } });
+                mindmapInstanceRef.current = null;
+                mindmapRef.current.innerHTML = ''; // Full wipe
+            }
+            return;
+        }
         renderDiagram();
     }, [currentCode, isStreamingCode]);
 
@@ -137,5 +157,29 @@ export const MindmapAgent = forwardRef<AgentRef>((_, ref) => {
         }
     }, [isStreamingCode, currentCode]);
 
-    return <div ref={mindmapRef} className="w-full h-full" />;
+    return (
+        <div className="w-full h-full relative bg-white">
+            {error ? (
+                <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+                    <div className="p-3 bg-red-50 rounded-full mb-3">
+                        <AlertCircle className="w-6 h-6 text-red-500" />
+                    </div>
+                    <p className="text-sm font-semibold text-slate-800">Mindmap Render Failed</p>
+                    <p className="text-xs text-slate-500 mt-1 mb-4 max-w-xs">{error}</p>
+                    <button
+                        onClick={() => window.dispatchEvent(new CustomEvent('deepdiagram-retry', {
+                            detail: { index: useChatStore.getState().messages.length - 1 }
+                        }))}
+                        className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors"
+                    >
+                        Try Regenerating
+                    </button>
+                </div>
+            ) : (
+                <div ref={mindmapRef} className="w-full h-full" />
+            )}
+        </div>
+    );
 });
+
+MindmapAgent.displayName = 'MindmapAgent';

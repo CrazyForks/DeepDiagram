@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallba
 import mermaid from 'mermaid';
 import { TransformWrapper, TransformComponent, useControls } from 'react-zoom-pan-pinch';
 import { useChatStore } from '../../store/chatStore';
-import { ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize, AlertCircle } from 'lucide-react';
 import type { AgentRef } from './types';
 
 // Initialize mermaid
@@ -18,7 +18,7 @@ const ZoomControls = ({ onFit }: { onFit: () => void }) => {
     const { zoomIn, zoomOut } = useControls();
 
     return (
-        <div className="absolute bottom-4 right-4 flex flex-col gap-2 bg-white p-2 rounded-lg shadow-md border border-slate-200 z-10">
+        <div className="absolute bottom-4 right-4 flex flex-col gap-2 bg-white p-2 rounded-lg shadow-md border border-slate-200 z-50">
             <button
                 onClick={() => zoomIn()}
                 className="p-2 hover:bg-slate-100 rounded-md text-slate-600 transition-colors"
@@ -49,12 +49,11 @@ export const MermaidAgent = forwardRef<AgentRef>((_, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [svgContent, setSvgContent] = useState<string>('');
-    const [error, setError] = useState<string | null>(null);
     const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const transformRef = useRef<any>(null);
 
-    // Robust manual fit calculation
     const handleZoomToFit = useCallback(() => {
         if (!transformRef.current || !wrapperRef.current || !dimensions) return;
 
@@ -63,31 +62,25 @@ export const MermaidAgent = forwardRef<AgentRef>((_, ref) => {
 
         if (contentWidth === 0 || contentHeight === 0 || containerWidth === 0 || containerHeight === 0) return;
 
-        // Calculate padding
-        const padding = 40;
+        const padding = 60;
         const availableWidth = containerWidth - padding;
         const availableHeight = containerHeight - padding;
 
         const scaleX = availableWidth / contentWidth;
         const scaleY = availableHeight / contentHeight;
 
-        // Fit whole diagram
         let scale = Math.min(scaleX, scaleY);
-        // Constrain scale
         scale = Math.min(Math.max(scale, 0.05), 4);
 
-        // Calculate centered position
         const scaledWidth = contentWidth * scale;
         const scaledHeight = contentHeight * scale;
 
         const x = (containerWidth - scaledWidth) / 2;
         const y = (containerHeight - scaledHeight) / 2;
 
-        // Apply transform directly
         transformRef.current.setTransform(x, y, scale, 200);
     }, [dimensions]);
 
-    // Expose export handles
     useImperativeHandle(ref, () => ({
         handleDownload: async (type: 'png' | 'svg') => {
             if (!containerRef.current) return;
@@ -100,28 +93,12 @@ export const MermaidAgent = forwardRef<AgentRef>((_, ref) => {
             let width = dimensions?.width || 0;
             let height = dimensions?.height || 0;
 
-            if (!width || !height) {
-                const viewBox = svgElement.getAttribute('viewBox');
-                if (viewBox) {
-                    const parts = viewBox.split(/\s+|,/).map(parseFloat);
-                    if (parts.length === 4) {
-                        width = parts[2];
-                        height = parts[3];
-                    }
-                } else {
-                    const bbox = svgElement.getBBox();
-                    width = bbox.width;
-                    height = bbox.height;
-                }
-            }
-
             clonedSvg.setAttribute('width', `${width}`);
             clonedSvg.setAttribute('height', `${height}`);
             clonedSvg.style.maxWidth = 'none';
             clonedSvg.style.maxHeight = 'none';
             clonedSvg.style.width = 'auto';
             clonedSvg.style.height = 'auto';
-            clonedSvg.style.margin = '0';
 
             const svgString = new XMLSerializer().serializeToString(clonedSvg);
 
@@ -171,68 +148,72 @@ export const MermaidAgent = forwardRef<AgentRef>((_, ref) => {
 
     useEffect(() => {
         setIsLoaded(false);
+        if (!currentCode) {
+            setSvgContent('');
+            setDimensions(null);
+            return;
+        }
         const renderDiagram = async () => {
-            if (!currentCode || !containerRef.current || isStreamingCode) return;
+            if (!containerRef.current || isStreamingCode) return;
 
             try {
-                // 1. Validate syntax first to prevent silent "Syntax error" SVG generation
-                // parse returns boolean or throws.
-                // Note: Mermaid types might imply it returns void, but we just need to catch if it throws.
-                await mermaid.parse(currentCode);
+                setError(null);
 
-                // 2. If valid, correct render
-                const id = `mermaid-${Date.now()}`;
-                const { svg } = await mermaid.render(id, currentCode);
-
-                let cleanedSvg = svg.replace(/style="[^"]*max-width[^"]*"/g, '');
-
-                const viewBoxMatch = cleanedSvg.match(/viewBox="([^"]+)"/);
-                if (viewBoxMatch) {
-                    const parts = viewBoxMatch[1].split(/\s+|,/).map(parseFloat);
-                    if (parts.length === 4) {
-                        setDimensions({ width: parts[2], height: parts[3] });
-                    }
+                // Robustly strip markdown blocks if they exist
+                let cleanCode = currentCode.trim();
+                const match = cleanCode.match(/```(?:mermaid)?\s*([\s\S]*?)\s*```/i);
+                if (match) {
+                    cleanCode = match[1].trim();
                 }
 
+                await mermaid.parse(cleanCode);
+
+                const id = `mermaid-${Date.now()}`;
+                const { svg } = await mermaid.render(id, cleanCode);
+
+                // STRIP FIXED WIDTH/HEIGHT & Inject full scale
+                let cleanedSvg = svg
+                    .replace(/width="[^"]*"/, 'width="100%"')
+                    .replace(/height="[^"]*"/, 'height="100%"')
+                    .replace(/style="[^"]*max-width[^"]*"/g, 'style="max-width:none !important;"');
+
                 setSvgContent(cleanedSvg);
-                setError(null);
-                setTimeout(() => setIsLoaded(true), 50);
 
-                // Report success to clear any potential previous error on the active step
+                // CRITICAL: Measure actual content after DOM update
+                setTimeout(() => {
+                    const svgElement = containerRef.current?.querySelector('svg');
+                    if (svgElement) {
+                        const viewBox = svgElement.viewBox.baseVal;
+                        // Use a safe buffer for height, some diagrams (timelines) have tricky text clipping
+                        const h = viewBox.height || 600;
+                        const w = viewBox.width || 800;
+
+                        setDimensions({
+                            width: Math.ceil(w) + 10,
+                            height: Math.ceil(h) + 10
+                        });
+                        setIsLoaded(true);
+                    }
+                }, 50);
+
                 useChatStore.getState().reportSuccess();
-
             } catch (err) {
-                // If it's a syntax error (common during streaming), we just ignore it for now
-                // or let the final result be caught.
-                // We do NOT want to show the native Mermaid error SVG.
-                console.warn("Mermaid parsing/render error (suppressed):", err);
-
-                // Only flag as error if we are NOT streaming (i.e. if this is the final result)
-                // But passing 'isLoading' props here might be needed?
-                // For now, consistent with user request: Suppress native error rendering.
-
+                console.warn("Mermaid parsing/render error:", err);
                 const msg = err instanceof Error ? err.message : "Failed to render Mermaid diagram";
+                setError(msg);
                 useChatStore.getState().reportError(msg);
-                setSvgContent(''); // Clear canvas
+                setSvgContent('');
             }
         };
 
         renderDiagram();
     }, [currentCode, isStreamingCode]);
 
-    // Use ResizeObserver to trigger fit when container size changes/initializes
     useEffect(() => {
         if (!wrapperRef.current || !isLoaded || !dimensions) return;
-
-        const observer = new ResizeObserver(() => {
-            handleZoomToFit();
-        });
-
+        const observer = new ResizeObserver(() => handleZoomToFit());
         observer.observe(wrapperRef.current);
-
-        // Also trigger once immediately
         handleZoomToFit();
-
         return () => observer.disconnect();
     }, [isLoaded, dimensions, handleZoomToFit]);
 
@@ -247,33 +228,44 @@ export const MermaidAgent = forwardRef<AgentRef>((_, ref) => {
     return (
         <div ref={wrapperRef} className="w-full h-full bg-white relative overflow-hidden">
             {error ? (
-                <div className="flex items-center justify-center h-full">
-                    <div className="text-red-500 font-mono text-sm p-4 bg-red-50 rounded border border-red-200">
-                        {error}
+                <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+                    <div className="p-3 bg-red-50 rounded-full mb-3">
+                        <AlertCircle className="w-6 h-6 text-red-500" />
                     </div>
+                    <p className="text-sm font-semibold text-slate-800">Mermaid Render Failed</p>
+                    <p className="text-xs text-slate-500 mt-1 mb-4 max-w-xs">{error}</p>
+                    <button
+                        onClick={() => window.dispatchEvent(new CustomEvent('deepdiagram-retry', {
+                            detail: { index: useChatStore.getState().messages.length - 1 }
+                        }))}
+                        className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors"
+                    >
+                        Try Regenerating
+                    </button>
                 </div>
             ) : (
                 <TransformWrapper
                     ref={transformRef}
                     initialScale={1}
                     minScale={0.05}
-                    maxScale={8}
+                    maxScale={12}
                     centerOnInit={false}
                     limitToBounds={false}
                 >
                     <ZoomControls onFit={handleZoomToFit} />
                     <TransformComponent
-                        wrapperClass="w-full h-full"
-                        contentClass=""
+                        wrapperClass="!w-full !h-full"
+                        contentClass="!flex !items-start !justify-start"
                     >
                         <div
                             ref={containerRef}
                             style={{
-                                width: dimensions ? dimensions.width : 'auto',
-                                height: dimensions ? dimensions.height : 'auto',
+                                width: dimensions ? `${dimensions.width}px` : 'auto',
+                                height: dimensions ? `${dimensions.height}px` : 'auto',
                                 opacity: isLoaded ? 1 : 0,
                                 transition: 'opacity 0.2s ease-in',
-                                transformOrigin: '0 0'
+                                transformOrigin: '0 0',
+                                overflow: 'visible' // Ensure internal SVG clipping doesn't happen
                             }}
                             dangerouslySetInnerHTML={{ __html: svgContent }}
                         />

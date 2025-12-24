@@ -15,7 +15,7 @@ import ReactFlow, {
     type Connection
 } from 'reactflow';
 import { cn } from '../../lib/utils';
-import { Play, Flag, Box, HelpCircle } from 'lucide-react';
+import { Play, Flag, Box, HelpCircle, AlertCircle } from 'lucide-react';
 import 'reactflow/dist/style.css';
 import { toPng, toSvg } from 'html-to-image';
 import type { AgentRef } from './types';
@@ -217,6 +217,7 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
     const { currentCode, setCurrentCode, isStreamingCode } = useChatStore();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const [error, setError] = useState<string | null>(null);
     const isInternalUpdate = useRef(false);
     const { getNodes, fitView } = useReactFlow();
 
@@ -311,10 +312,13 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
 
     // Sync React Flow state back to currentCode
     useEffect(() => {
-        if (!isStreamingCode && nodes.length > 0) {
+        // Only sync back if we are NOT streaming AND we have a base to sync back to (currentCode is not empty)
+        // This prevents the "ghost nodes" from a previous turn from overwriting the new 'currentCode'
+        const code = useChatStore.getState().currentCode;
+        if (!isStreamingCode && nodes.length > 0 && code) {
             const data = { nodes, edges };
             const json = JSON.stringify(data, null, 2);
-            if (json !== currentCode) {
+            if (json !== code) {
                 isInternalUpdate.current = true;
                 setCurrentCode(json);
             }
@@ -338,6 +342,7 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
                 }
                 const data = JSON.parse(jsonStr);
                 if (data.nodes && Array.isArray(data.nodes)) {
+                    setError(null);
                     // V4 STRUCTURAL FIX: Sanitize and Fix AI garbage
                     const processedNodes = data.nodes.map((n: any) => {
                         // 1. Force valid types
@@ -363,40 +368,66 @@ export const FlowAgent = forwardRef<AgentRef>((_, ref) => {
 
                     setNodes(processedNodes);
                     setEdges(data.edges || []);
+                    useChatStore.getState().reportSuccess();
                 }
             } catch (e) {
-                // Ignore parsing errors
+                console.error("Flow render error", e);
+                const msg = e instanceof Error ? e.message : "Failed to render flowchart";
+                setError(msg);
+                useChatStore.getState().reportError(msg);
             }
+        } else {
+            // CRITICAL: Clear nodes and edges if currentCode is empty (e.g. at start of retry)
+            setNodes([]);
+            setEdges([]);
         }
     }, [currentCode, isStreamingCode]);
 
     return (
-        <div className="w-full h-full bg-[#fcfcfc]">
+        <div className="w-full h-full bg-[#fcfcfc] relative">
             <style>{nodeResetStyles}</style>
-            <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                nodeTypes={nodeTypes}
-                defaultEdgeOptions={{
-                    type: 'smoothstep',
-                    animated: true,
-                    style: { strokeWidth: 2, stroke: '#94a3b8' },
-                    markerEnd: {
-                        type: MarkerType.ArrowClosed,
-                        width: 20,
-                        height: 20,
-                        color: '#94a3b8',
-                    },
-                }}
-                fitView
-                fitViewOptions={{ padding: 0.2 }}
-            >
-                <Background color="#cbd5e1" gap={28} size={1} />
-                <Controls />
-            </ReactFlow>
+            {error ? (
+                <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+                    <div className="p-3 bg-red-50 rounded-full mb-3">
+                        <AlertCircle className="w-6 h-6 text-red-500" />
+                    </div>
+                    <p className="text-sm font-semibold text-slate-800">Flowchart Render Failed</p>
+                    <p className="text-xs text-slate-500 mt-1 mb-4 max-w-xs">{error}</p>
+                    <button
+                        onClick={() => window.dispatchEvent(new CustomEvent('deepdiagram-retry', {
+                            detail: { index: useChatStore.getState().messages.length - 1 }
+                        }))}
+                        className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors"
+                    >
+                        Try Regenerating
+                    </button>
+                </div>
+            ) : (
+                <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onConnect={onConnect}
+                    nodeTypes={nodeTypes}
+                    defaultEdgeOptions={{
+                        type: 'smoothstep',
+                        animated: true,
+                        style: { strokeWidth: 2, stroke: '#94a3b8' },
+                        markerEnd: {
+                            type: MarkerType.ArrowClosed,
+                            width: 20,
+                            height: 20,
+                            color: '#94a3b8',
+                        },
+                    }}
+                    fitView
+                    fitViewOptions={{ padding: 0.2 }}
+                >
+                    <Background color="#cbd5e1" gap={28} size={1} />
+                    <Controls />
+                </ReactFlow>
+            )}
         </div>
     );
 });

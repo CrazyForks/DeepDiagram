@@ -122,20 +122,20 @@ export const ChatPanel = () => {
         const msgs = [...messages];
         let retryPrompt = '';
         let retryImages: string[] = [];
-        let parentId: number | undefined = undefined;
+        let parentId: number | null | undefined = undefined;
         let sliceIndex = 0;
 
         if (msgs[index].role === 'user') {
             retryPrompt = msgs[index].content;
             retryImages = msgs[index].images || [];
-            parentId = msgs[index].parent_id || undefined;
+            parentId = msgs[index].parent_id ?? null;
             sliceIndex = index + 1; // Branch from this user message
         } else {
             for (let i = index - 1; i >= 0; i--) {
                 if (msgs[i].role === 'user') {
                     retryPrompt = msgs[i].content;
                     retryImages = msgs[i].images || [];
-                    parentId = msgs[i].id; // The assistant's parent is the user message
+                    parentId = msgs[i].id ?? null; // Ensure we don't pass undefined
                     sliceIndex = i + 1; // Branch from this user message
                     break;
                 }
@@ -299,7 +299,7 @@ export const ChatPanel = () => {
         }
     };
 
-    const triggerSubmit = async (customPrompt?: string, customImages?: string[], parentId?: number, isRetry?: boolean) => {
+    const triggerSubmit = async (customPrompt?: string, customImages?: string[], parentId?: number | null, isRetry?: boolean) => {
         const promptToUse = customPrompt ?? input;
         const imagesToUse = customImages ?? [...inputImages];
 
@@ -309,17 +309,22 @@ export const ChatPanel = () => {
             setInput('');
             setShowMentions(false);
             clearInputImages();
-            setCurrentCode(''); // Clear stale code from previous turn
         }
+        setCurrentCode(''); // Always clear on submittal/retry to ensure canvas is fresh
 
-        // Use parentId from arguments, or the ID of the last message if not retrying
-        const effectiveParentId = parentId ?? (messages.length > 0 ? messages[messages.length - 1].id : null);
+        const currentMessages = useChatStore.getState().messages;
+        const effectiveParentId = parentId ?? (currentMessages.length > 0 ? currentMessages[currentMessages.length - 1].id : null);
 
         if (!isRetry) {
-            addMessage({ role: 'user', content: promptToUse, images: imagesToUse, parent_id: effectiveParentId });
+            // New turn: Assistant is child of the User message
+            addMessage({ role: 'user', content: promptToUse, images: imagesToUse, parent_id: effectiveParentId ?? null });
+            setLoading(true);
+            addMessage({ role: 'assistant', content: '', parent_id: undefined }); // Linked by unconfirmed ID propagation
+        } else {
+            // Retry: Assistant shares parent with the retried message (siblings)
+            setLoading(true);
+            addMessage({ role: 'assistant', content: '', parent_id: parentId ?? null });
         }
-        setLoading(true);
-        addMessage({ role: 'assistant', content: '', parent_id: effectiveParentId }); // Mark the parent specifically for branching
 
         let thoughtBuffer = "";
         let toolArgsBuffer = "";
@@ -379,13 +384,39 @@ export const ChatPanel = () => {
                                     const lastMatchIdx = [...msgs].reverse().findIndex(m => m.role === data.role);
                                     if (lastMatchIdx !== -1) {
                                         const actualIdx = msgs.length - 1 - lastMatchIdx;
+                                        const oldId = msgs[actualIdx].id;
                                         msgs[actualIdx].id = data.id;
 
                                         // Also update in allMessages - find the matching message object by role and missing ID
-                                        // Since we append to allMessages, the last one with this role and no ID is likely it
                                         const lastAllMatchIdx = [...allMsgs].reverse().findIndex(m => m.role === data.role && !m.id);
                                         if (lastAllMatchIdx !== -1) {
                                             allMsgs[allMsgs.length - 1 - lastAllMatchIdx].id = data.id;
+                                        }
+
+                                        // FIX: Propagate the true ID to any children that were referencing the unconfirmed message
+                                        // This is critical for the paging UI to recognize siblings immediately
+                                        allMsgs.forEach(m => {
+                                            if (m.parent_id === oldId) {
+                                                m.parent_id = data.id;
+                                            }
+                                        });
+                                        msgs.forEach(m => {
+                                            if (m.parent_id === oldId) {
+                                                m.parent_id = data.id;
+                                            }
+                                        });
+
+                                        // Update selectedVersions for the parent to track this new active message
+                                        const pid = msgs[actualIdx].parent_id;
+                                        if (pid !== null && pid !== undefined) {
+                                            return {
+                                                messages: msgs,
+                                                allMessages: allMsgs,
+                                                selectedVersions: {
+                                                    ...state.selectedVersions,
+                                                    [pid]: data.id
+                                                }
+                                            };
                                         }
                                     }
 
@@ -607,12 +638,6 @@ export const ChatPanel = () => {
                     </div>
                 )}
                 {messages.map((msg, idx) => {
-                    const hasVisibleSteps = msg.steps && msg.steps.some(s => !(s.type === 'agent_select' && (s.name === 'general' || s.name === 'general_agent')));
-
-                    if (msg.role === 'assistant' && !msg.content.trim() && !hasVisibleSteps && (!msg.images || msg.images.length === 0)) {
-                        return null;
-                    }
-
                     const switchVersion = (msg: Message, delta: number) => {
                         if (isLoading) return; // Prevent switching while loading
                         const siblings = allMessages.filter(m => m.parent_id === msg.parent_id && m.role === msg.role);
@@ -632,6 +657,15 @@ export const ChatPanel = () => {
                         const currentIdx = siblings.findIndex(s => s.id === msg.id);
                         return { current: currentIdx + 1, total: siblings.length };
                     };
+
+                    const versionInfo = getVersionInfo(msg);
+                    const isGenerating = msg.role === 'assistant' && idx === messages.length - 1 && isLoading;
+                    const hasVisibleSteps = msg.steps && msg.steps.some(s => !(s.type === 'agent_select' && (s.name === 'general' || s.name === 'general_agent')));
+                    const hasContent = msg.content.trim() || hasVisibleSteps || (msg.images && msg.images.length > 0);
+
+                    if (msg.role === 'assistant' && !hasContent && !isGenerating && !versionInfo) {
+                        return null;
+                    }
 
                     return (
                         <div
@@ -660,6 +694,12 @@ export const ChatPanel = () => {
                                 >
                                     {msg.content}
                                 </ReactMarkdown>
+                                {isGenerating && !hasContent && (
+                                    <div className="flex items-center space-x-2 py-1 animate-pulse">
+                                        <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                                        <span className="text-xs text-slate-400 font-medium">Thinking...</span>
+                                    </div>
+                                )}
                                 {msg.images && msg.images.length > 0 && (
                                     <div className="flex gap-2 flex-wrap mt-2">
                                         {msg.images.map((img, i) => (
@@ -668,7 +708,7 @@ export const ChatPanel = () => {
                                     </div>
                                 )}
 
-                                {getVersionInfo(msg) && (
+                                {versionInfo && (
                                     <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100/50">
                                         <div className="flex items-center bg-slate-50 rounded-lg p-0.5 border border-slate-100">
                                             <button
@@ -679,7 +719,7 @@ export const ChatPanel = () => {
                                                 <ChevronLeft className="w-3 h-3" />
                                             </button>
                                             <span className="text-[10px] font-bold px-2 text-slate-500 min-w-[3rem] text-center">
-                                                {getVersionInfo(msg)?.current} / {getVersionInfo(msg)?.total}
+                                                {versionInfo?.current} / {versionInfo?.total}
                                             </span>
                                             <button
                                                 onClick={() => switchVersion(msg, 1)}
@@ -734,14 +774,6 @@ export const ChatPanel = () => {
                         </div>
                     );
                 })}
-                {isLoading && (
-                    <div className="flex justify-start animate-pulse">
-                        <div className="bg-white border border-slate-100 rounded-2xl px-4 py-3 shadow-sm flex items-center space-x-2">
-                            <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
-                            <span className="text-xs text-slate-400 font-medium">Thinking...</span>
-                        </div>
-                    </div>
-                )}
                 <div ref={messagesEndRef} />
             </div>
 
