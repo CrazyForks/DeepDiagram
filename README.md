@@ -4,6 +4,8 @@
 
 ![DeepDiagram AI Demo](./images/20251222-152234.gif)
 
+![DeepDiagram AI Demo1](./images/20251225-170102.gif)
+
 ---
 
 ## 🚀 Features
