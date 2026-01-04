@@ -188,6 +188,10 @@ Visit `http://localhost`. The frontend will be served by Nginx on port 80 and wi
 - [x] One-Click Session Refresh (New Chat)
 - [ ] Extended Multimodal Support (PDF, Docx, etc.) for Context Parsing
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=twwch/DeepDiagram&type=date&legend=top-left)](https://www.star-history.com/#twwch/DeepDiagram&type=date&legend=top-left)
+
 ---
 
 ## 📄 License

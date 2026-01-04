@@ -188,6 +188,10 @@ docker-compose up -d
 - [x] 一键新建会话 (上下文重置)
 - [ ] 增强型多模态：支持非图片文件 (PDF, Docx 等) 解析
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=twwch/DeepDiagram&type=date&legend=top-left)](https://www.star-history.com/#twwch/DeepDiagram&type=date&legend=top-left)
+
 ---
 
 ## 📄 开源协议
