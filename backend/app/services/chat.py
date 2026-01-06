@@ -40,12 +40,12 @@ class ChatService:
         self.session.add(message)
         
         # Update session updated_at
-        from datetime import datetime
+        from datetime import datetime, timezone
         statement = select(ChatSession).where(ChatSession.id == session_id)
         result = await self.session.exec(statement)
         chat_session = result.first()
         if chat_session:
-            chat_session.updated_at = datetime.utcnow()
+            chat_session.updated_at = datetime.now(timezone.utc)
             self.session.add(chat_session)
             
         await self.session.commit()
