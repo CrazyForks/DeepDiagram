@@ -33,7 +33,8 @@ Your goal is to generate professional ECharts configurations (JSON).
 - **Pie Charts**: DO NOT use xAxis/yAxis. Use `series: [{ type: 'pie', data: [{name:..., value:...}] }]`.
 
 ### EXECUTION
-- If data is missing (e.g. "Draw a sales chart"), GENERATE realistic dummy data.
+- **CONTENT RICHNESS**: If the user request is simple (e.g., "draw a sales chart"), assume multiple series or categories to make the chart look professional and informative. Use diverse chart types and add helpful ECharts features like dataZoom or markPoints if they add value.
+- If data is missing, GENERATE realistic, detailed dummy data.
 - Return ONLY the JSON string.
 """
 

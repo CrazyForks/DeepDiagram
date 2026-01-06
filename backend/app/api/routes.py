@@ -50,38 +50,31 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
     yield f"event: message_created\ndata: {json.dumps({'id': last_user_msg_id, 'role': 'user'})}\n\n"
     
     # 3. Load History
-    history = await chat_service.get_history(session_id)
-    formatted_history = []
+    all_history = await chat_service.get_history(session_id)
     
-    # We exclude the content we just added (the last user message) to avoid duplication if we re-append it
-    # Actually, get_history returns ALL, including the one we just added? 
-    # Let's check get_history order. It says order_by(created_at).
-    # Since we await add_message above, it SHOULD be in history.
-    # But we want to separate the "current input" (message variable) from "history".
-    # Or we can just pass the whole thing as "history" and inputs['messages'] = history?
-    # LangGraph usually takes partial updates, but if we are stateless, we pass everything?
+    # Trace the branch from request.parent_id backwards to root
+    # This ensures that for retries or switching versions, the LLM only sees the active branch
+    history_map = {msg.id: msg for msg in all_history}
     
-    # Let's separate "previous history" and "current message".
-    # But simplicity: Just filter out the very last one if it matches? 
-    # Or cleaner: Fetch history BEFORE adding current? No, get_history might render better?
+    branch_messages = []
+    curr_id = request.parent_id
     
-    # Implementation:
-    # 1. Fetch all history (including current)
-    # 2. Convert to LC messages
-    # 3. separate last one as 'current'? Or just pass all?
-    # For router, passing all is fine.
+    # If it's a retry, the parent_id provided is the User Message itself.
+    # We want its ancestors for the history.
+    if request.is_retry and curr_id in history_map:
+        curr_id = history_map[curr_id].parent_id
+
+    while curr_id is not None and curr_id in history_map:
+        msg = history_map[curr_id]
+        branch_messages.append(msg)
+        curr_id = msg.parent_id
+    
+    branch_messages.reverse()
     
     from langchain_core.messages import AIMessage, HumanMessage
 
-    for msg in history:
-        # Skip the current message we just added to properly treat it as "new input" if needed?
-        # Actually safer to construct "previous history" + "current message request object".
-        # But ChatMessage db object content is string.
-        
-        # If it's the message we just added ... skip?
-        if msg.role == "user" and msg.content == request.prompt and msg == history[-1]: 
-             continue
-
+    formatted_history = []
+    for msg in branch_messages:
         if msg.role == "user":
             formatted_history.append(HumanMessage(content=msg.content))
         elif msg.role == "assistant":

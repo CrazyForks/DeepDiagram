@@ -144,7 +144,10 @@ export const ChatPanel = () => {
         if (retryPrompt || retryImages.length > 0) {
             // Slice the visual list to the branching point before triggering new generation
             useChatStore.setState({ messages: msgs.slice(0, sliceIndex) });
-            void triggerSubmit(retryPrompt, retryImages, parentId, true);
+            // If we are retrying a USER message, we want to create a NEW USER message (isRetry=false)
+            // If we are retrying an ASSISTANT message, we want to create a NEW ASSISTANT message (isRetry=true)
+            const isAssistantRetry = msgs[index].role === 'assistant';
+            void triggerSubmit(retryPrompt, retryImages, parentId, isAssistantRetry);
         }
     };
 
@@ -289,6 +292,7 @@ export const ChatPanel = () => {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
             setLoading(false);
+            setStreamingCode(false); // Ensure flags are reset
             addStepToLastMessage({
                 type: 'agent_select',
                 name: 'System',
@@ -311,6 +315,7 @@ export const ChatPanel = () => {
             clearInputImages();
         }
         setCurrentCode(''); // Always clear on submittal/retry to ensure canvas is fresh
+        setStreamingCode(false); // Reset streaming state
 
         const currentMessages = useChatStore.getState().messages;
         const effectiveParentId = parentId ?? (currentMessages.length > 0 ? currentMessages[currentMessages.length - 1].id : null);
@@ -407,8 +412,9 @@ export const ChatPanel = () => {
                                         });
 
                                         // Update selectedVersions for the parent to track this new active message
+                                        // Only update for assistant messages, user messages don't have versions
                                         const pid = msgs[actualIdx].parent_id;
-                                        if (pid !== null && pid !== undefined) {
+                                        if (pid !== null && pid !== undefined && data.role !== 'user') {
                                             return {
                                                 messages: msgs,
                                                 allMessages: allMsgs,
@@ -510,6 +516,7 @@ export const ChatPanel = () => {
             }
         } finally {
             setLoading(false);
+            setStreamingCode(false); // Final safety reset
             abortControllerRef.current = null;
         }
     };
@@ -532,7 +539,10 @@ export const ChatPanel = () => {
                 <div className="flex items-center gap-2">
                     {/* New Chat Button */}
                     <button
-                        onClick={() => createNewChat()}
+                        onClick={() => {
+                            stopGeneration();
+                            createNewChat();
+                        }}
                         className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20 active:scale-95"
                     >
                         <Plus className="w-3.5 h-3.5" />
@@ -658,7 +668,7 @@ export const ChatPanel = () => {
                         return { current: currentIdx + 1, total: siblings.length };
                     };
 
-                    const versionInfo = getVersionInfo(msg);
+                    const versionInfo = msg.role === 'assistant' ? getVersionInfo(msg) : null;
                     const isGenerating = msg.role === 'assistant' && idx === messages.length - 1 && isLoading;
                     const hasVisibleSteps = msg.steps && msg.steps.some(s => !(s.type === 'agent_select' && (s.name === 'general' || s.name === 'general_agent')));
                     const hasContent = msg.content.trim() || hasVisibleSteps || (msg.images && msg.images.length > 0);

@@ -26,7 +26,7 @@ Your goal is to interpret the user's request and generate a valid, uncompressed 
 ### Styling Guidelines:
 -   Use standard `style` attributes for shapes (e.g., `style="rounded=1;whiteSpace=wrap;html=1;"` for rectangles).
 -   Use `style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;"` for connectors (edges).
--   For complex diagrams, ensure spatial layout is clear and nodes do not overlap.
+- **CONTENT RICHNESS**: If the user request is simple (e.g., "AWS Architecture"), expand it into a detailed, professional diagram including VPCs, Subnets, multiple availability zones, and common services (ELB, EC2, RDS, S3) arranged logically.
 
 ### Example Output format:
 <mxfile host="Electron" agent="DeepDiagram" version="24.0.0">
