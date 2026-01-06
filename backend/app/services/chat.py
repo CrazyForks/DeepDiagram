@@ -45,7 +45,7 @@ class ChatService:
         result = await self.session.exec(statement)
         chat_session = result.first()
         if chat_session:
-            chat_session.updated_at = datetime.now(timezone.utc)
+            chat_session.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             self.session.add(chat_session)
             
         await self.session.commit()
