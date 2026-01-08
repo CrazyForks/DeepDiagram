@@ -28,6 +28,8 @@ const StepItem = ({ step, activeAgent, messageIndex, associatedResult, onRetry, 
     useEffect(() => {
         if (step.isStreaming) {
             setIsExpanded(true);
+        } else if (step.type === 'tool_start' && !step.isStreaming) {
+            setIsExpanded(false);
         } else if (step.status === 'done' && step.type === 'tool_end' && step.name === 'Result') {
             // Give the user a moment to see the final result before collapsing
             const timer = setTimeout(() => setIsExpanded(false), 1500);

@@ -90,7 +90,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return newState as any;
     }),
 
-    updateLastMessage: (content: string, isStreaming = false, status: 'running' | 'done' | 'error' = 'done', sessionId?: number) => set((state) => {
+    updateLastMessage: (content: string, isStreaming = false, status: 'running' | 'done' | 'error' = 'done', sessionId?: number, skipCanvasSync = false) => set((state) => {
         if (sessionId && sessionId !== state.sessionId) return {};
         const allMsgs = [...state.allMessages];
         const activeId = state.activeMessageId;
@@ -113,7 +113,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 (status === 'done' && isLatestAssistant) ||
                 (isStreaming && isStreamingAgent && isLatestAssistant);
 
-            if (isActive && (status === 'done' || (isStreaming && isStreamingAgent))) {
+            if (isActive && !skipCanvasSync && (status === 'done' || (isStreaming && isStreamingAgent))) {
                 if (msg.id) set({ activeMessageId: msg.id });
                 setCanvasState({
                     activeMessageId: msg.id || null,

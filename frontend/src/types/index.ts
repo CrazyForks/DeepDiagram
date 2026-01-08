@@ -54,7 +54,7 @@ export interface ChatState {
     setStreamingCode: (streaming: boolean) => void;
     setSessionId: (id: number | null) => void;
     setMessages: (messages: Message[]) => void;
-    updateLastMessage: (content: string, isStreaming?: boolean, status?: 'running' | 'done' | 'error', sessionId?: number) => void;
+    updateLastMessage: (content: string, isStreaming?: boolean, status?: 'running' | 'done' | 'error', sessionId?: number, skipCanvasSync?: boolean) => void;
     setActiveMessageId: (id: number | null) => void;
     addStepToLastMessage: (step: Step, sessionId?: number) => void;
     updateLastStepContent: (content: string, isStreaming?: boolean, status?: 'running' | 'done', type?: Step['type'], append?: boolean, sessionId?: number) => void;

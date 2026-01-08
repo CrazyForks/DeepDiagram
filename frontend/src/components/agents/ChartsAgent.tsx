@@ -119,7 +119,10 @@ export const ChartsAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) =
             console.error("ECharts error", e);
             const msg = e instanceof Error ? e.message : "Failed to render chart";
             setError(msg);
-            useChatStore.getState().reportError(msg);
+            if (chartInstanceRef.current) {
+                chartInstanceRef.current.dispose();
+                chartInstanceRef.current = null;
+            }
         }
     }, [currentCode, isStreamingCode]);
 
@@ -134,9 +137,9 @@ export const ChartsAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) =
     }, []);
 
     return (
-        <div className="w-full h-full relative bg-white flex items-center justify-center">
+        <div className="absolute inset-0 w-full h-full bg-white flex flex-col items-center justify-center">
             {error ? (
-                <div className="flex flex-col items-center justify-center p-8 text-center max-w-md">
+                <div key="error-view" className="flex flex-col items-center justify-center p-8 text-center max-w-md">
                     <div className="p-4 bg-red-50 rounded-full mb-4">
                         <AlertCircle className="w-8 h-8 text-red-500" />
                     </div>
@@ -155,7 +158,7 @@ export const ChartsAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) =
                     </button>
                 </div>
             ) : (
-                <div ref={chartRef} className="w-full h-full" />
+                <div key="chart-view" ref={chartRef} className="w-full h-full" />
             )}
         </div>
     );

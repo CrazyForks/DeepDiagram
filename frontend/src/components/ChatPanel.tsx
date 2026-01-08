@@ -368,19 +368,26 @@ export const ChatPanel = () => {
             if (pm) parentTurn = pm.turn_index ?? -1;
         }
 
+        const timestamp = Date.now();
         if (!isRetry) {
             const userTurn = parentTurn + 1;
             const assistantTurn = userTurn + 1;
-            addMessage({ role: 'user', content: promptToUse, images: imagesToUse, parent_id: effectiveParentId ?? null, turn_index: userTurn });
+            // Use negative IDs for temporary local messages to ensure they are trackable
+            const tempUserId = -timestamp;
+            const tempAssistantId = -(timestamp + 1);
+
+            addMessage({ id: tempUserId, role: 'user', content: promptToUse, images: imagesToUse, parent_id: effectiveParentId ?? null, turn_index: userTurn, created_at: new Date().toISOString() });
             setLoading(true);
             // Link to parent locally if possible, or leave as null for backend to link
-            addMessage({ role: 'assistant', content: '', parent_id: effectiveParentId ?? null, turn_index: assistantTurn, steps: [] });
-            setActiveMessageId(null); // Will fallback to last message in allMessages until ID is confirmed
+            addMessage({ id: tempAssistantId, role: 'assistant', content: '', parent_id: effectiveParentId ?? null, turn_index: assistantTurn, steps: [], created_at: new Date().toISOString() });
+            setActiveMessageId(tempAssistantId);
         } else {
             const assistantTurn = parentTurn + 1;
+            const tempAssistantId = -timestamp;
+
             setLoading(true);
-            addMessage({ role: 'assistant', content: '', parent_id: parentId ?? null, turn_index: assistantTurn, steps: [] });
-            setActiveMessageId(null);
+            addMessage({ id: tempAssistantId, role: 'assistant', content: '', parent_id: parentId ?? null, turn_index: assistantTurn, steps: [], created_at: new Date().toISOString() });
+            setActiveMessageId(tempAssistantId);
         }
 
         let thoughtBuffer = "";
@@ -448,7 +455,8 @@ export const ChatPanel = () => {
                                 case 'message_created':
                                     useChatStore.setState((state) => {
                                         const allMsgs = [...state.allMessages];
-                                        const targetIdx = allMsgs.findIndex(m => m.role === data.role && !m.id);
+                                        // Match by role AND (no ID OR temp ID < 0)
+                                        const targetIdx = allMsgs.findIndex(m => m.role === data.role && (!m.id || m.id < 0));
                                         if (targetIdx !== -1) {
                                             const oldId = allMsgs[targetIdx].id;
                                             allMsgs[targetIdx].id = data.id;
@@ -534,7 +542,7 @@ export const ChatPanel = () => {
                                         const isIdentical = isEqualJson(lastStepTool.content, toolInput);
                                         const isGenericPrecursor = lastStepTool.type === 'tool_start' &&
                                             (lastStepTool.name === 'charts' || lastStepTool.name === 'infographic' ||
-                                                lastStepTool.content === '{}' || !lastStepTool.content);
+                                                lastStepTool.content === '{}' || !lastStepTool.content || lastStepTool.name === '');
 
                                         const isReplaceable = lastStepTool.type === 'tool_start';
 
@@ -546,8 +554,8 @@ export const ChatPanel = () => {
                                                 type: 'tool_start',
                                                 name: data.tool,
                                                 content: toolInput,
-                                                status: 'running',
-                                                isStreaming: true,
+                                                status: 'done',
+                                                isStreaming: false,
                                                 timestamp: Date.now()
                                             }, eventSessionId);
                                             break;
@@ -565,16 +573,16 @@ export const ChatPanel = () => {
                                         type: 'tool_start',
                                         name: data.tool,
                                         content: toolInput,
-                                        status: 'running',
+                                        status: 'done',
                                         timestamp: Date.now(),
-                                        isStreaming: true
+                                        isStreaming: false
                                     }, eventSessionId);
                                     break;
 
                                 case 'thought':
                                     if (data.content) {
                                         thoughtBuffer += data.content;
-                                        updateLastMessage(thoughtBuffer, true, 'running', eventSessionId);
+                                        updateLastMessage(thoughtBuffer, true, 'running', eventSessionId, true);
                                     }
                                     break;
 
@@ -609,6 +617,22 @@ export const ChatPanel = () => {
 
                                 case 'tool_args_stream':
                                     if (data.args) {
+                                        const stateArgs = useChatStore.getState();
+                                        const lastMsgArgs = stateArgs.allMessages[stateArgs.allMessages.length - 1];
+                                        const lastStepArgs = lastMsgArgs?.steps?.[lastMsgArgs.steps.length - 1];
+
+                                        if (!lastStepArgs || lastStepArgs.type !== 'tool_start') {
+                                            addStepToLastMessage({
+                                                type: 'tool_start',
+                                                name: '',
+                                                content: '',
+                                                status: 'running',
+                                                timestamp: Date.now(),
+                                                isStreaming: true
+                                            }, eventSessionId);
+                                            toolArgsBuffer = "";
+                                        }
+
                                         toolArgsBuffer += data.args;
                                         updateLastStepContent(toolArgsBuffer, true, 'running', 'tool_start', false, eventSessionId);
                                     }
