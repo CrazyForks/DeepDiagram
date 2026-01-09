@@ -1,12 +1,13 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
+import { cleanContent } from '../../lib/utils';
 import * as echarts from 'echarts';
 import type { AgentRef, AgentProps } from './types';
 import { AlertCircle } from 'lucide-react';
 
 export const ChartsAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) => {
     const { isStreamingCode } = useChatStore();
-    const currentCode = content;
+    const currentCode = cleanContent(content);
     const chartRef = useRef<HTMLDivElement>(null);
     const chartInstanceRef = useRef<echarts.ECharts | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -109,7 +110,13 @@ export const ChartsAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) =
 
             useChatStore.getState().reportSuccess();
 
-            const resizeObserver = new ResizeObserver(() => chart?.resize());
+            const resizeObserver = new ResizeObserver(() => {
+                try {
+                    chart?.resize();
+                } catch (e) {
+                    console.warn("Chart resize error:", e);
+                }
+            });
             resizeObserver.observe(chartRef.current);
 
             return () => {

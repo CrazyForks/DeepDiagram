@@ -24,9 +24,10 @@ import {
     X
 } from 'lucide-react';
 import { useChatStore } from '../store/chatStore';
-import { cn, copyToClipboard } from '../lib/utils';
+import { cn, copyToClipboard, parseMixedContent, type ContentBlock } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { ExecutionTrace } from './ExecutionTrace';
+import { ThinkingPanel } from './common/ThinkingPanel';
 import type { Message, Step } from '../types';
 
 const AGENTS = [
@@ -964,19 +965,45 @@ export const ChatPanel = () => {
                                 {msg.steps && msg.steps.length > 0 && (
                                     <ExecutionTrace steps={msg.steps} messageIndex={idx} onRetry={() => handleRetry(idx)} onSync={() => handleSync(msg)} />
                                 )}
-                                <ReactMarkdown
-                                    components={{
-                                        code: ({ node, ...props }) => <code onClick={(e) => e.stopPropagation()} className="bg-black/10 rounded px-1 py-0.5 whitespace-pre-wrap break-words" {...props} />,
-                                        pre: ({ node, ...props }) => <pre onClick={(e) => e.stopPropagation()} className="bg-slate-900 text-slate-50 p-3 rounded-lg overflow-x-auto text-xs my-2 max-w-full custom-scrollbar" {...props} />
-                                    }}
-                                >
-                                    {msg.content
-                                        .split('### Execution Trace:')[0]  // 过滤掉 Execution Trace 部分
-                                        .split('\n')
-                                        .filter(line => !line.includes('[Error'))
-                                        .join('\n')
-                                        .trim()}
-                                </ReactMarkdown>
+                                {(() => {
+                                    const blocks = parseMixedContent(msg.content);
+
+                                    return (
+                                        <div className="flex flex-col gap-2">
+                                            {blocks.map((block: ContentBlock, blockIdx: number) => {
+                                                if (block.type === 'thought') {
+                                                    return (
+                                                        <div key={blockIdx} className="rounded-lg overflow-hidden border border-purple-100 shadow-sm">
+                                                            <ThinkingPanel thought={block.content} isThinking={block.isThinking} />
+                                                        </div>
+                                                    );
+                                                }
+
+                                                // Clean text content for display
+                                                const displayContent = block.content
+                                                    .split('### Execution Trace:')[0]
+                                                    .split('\n')
+                                                    .filter((line: string) => !line.includes('[Error'))
+                                                    .join('\n')
+                                                    .trim();
+
+                                                if (!displayContent) return null;
+
+                                                return (
+                                                    <ReactMarkdown
+                                                        key={blockIdx}
+                                                        components={{
+                                                            code: ({ node, ...props }) => <code onClick={(e) => e.stopPropagation()} className="bg-black/10 rounded px-1 py-0.5 whitespace-pre-wrap break-words" {...props} />,
+                                                            pre: ({ node, ...props }) => <pre onClick={(e) => e.stopPropagation()} className="bg-slate-900 text-slate-50 p-3 rounded-lg overflow-x-auto text-xs my-2 max-w-full custom-scrollbar" {...props} />
+                                                        }}
+                                                    >
+                                                        {displayContent}
+                                                    </ReactMarkdown>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                })()}
                                 {isGenerating && (
                                     <div className={cn(
                                         "flex items-center space-x-2 py-1 animate-pulse",

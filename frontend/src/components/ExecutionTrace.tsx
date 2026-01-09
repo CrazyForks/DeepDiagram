@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { cn, copyToClipboard } from '../lib/utils';
+import { cn, copyToClipboard, parseMixedContent, type ContentBlock } from '../lib/utils';
 import { BrainCircuit, Terminal, CheckCircle, ChevronDown, ChevronRight, Activity, Copy, Play, Check, RotateCcw } from 'lucide-react';
+import { ThinkingPanel } from './common/ThinkingPanel';
 import { useChatStore } from '../store/chatStore';
 import type { Step } from '../types';
 
@@ -166,30 +167,56 @@ const StepItem = ({ step, activeAgent, messageIndex, associatedResult, onRetry, 
 
             {hasContent && isExpanded && (
                 <div className="px-2 pb-2 overflow-hidden animate-in slide-in-from-top-1 duration-200">
-                    <div className="bg-white/50 rounded border border-slate-200 overflow-hidden">
-                        {/* Toolbar for tool_end (Result cards) */}
-                        {step.type === 'tool_end' && (
-                            <div className="flex items-center justify-end gap-1 p-1 bg-slate-100 border-b border-slate-200">
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        void copyToClipboard(step.content || '');
-                                        setCopied(true);
-                                        setTimeout(() => setCopied(false), 2000);
-                                    }}
-                                    className="p-1 hover:bg-white rounded text-slate-500 hover:text-blue-600 transition-colors"
-                                    title="Copy Code"
-                                >
-                                    {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-                                </button>
+                    {/* Render Content Blocks */}
+                    {(() => {
+                        const blocks = parseMixedContent(step.content || '');
+                        // We also need the raw clean code for the copy button if it's a tool_end
+                        const fullCode = blocks.filter((b: ContentBlock) => b.type === 'text').map((b: ContentBlock) => b.content).join('');
+
+                        return (
+                            <div className="flex flex-col gap-2">
+                                {blocks.map((block: ContentBlock, idx: number) => {
+                                    if (block.type === 'thought') {
+                                        return (
+                                            <div key={idx} className="rounded border border-purple-100 overflow-hidden">
+                                                <ThinkingPanel thought={block.content} isThinking={block.isThinking} />
+                                            </div>
+                                        );
+                                    }
+
+                                    // Text Block (Code/Result)
+                                    if (!block.content.trim()) return null;
+
+                                    return (
+                                        <div key={idx} className="bg-white/50 rounded border border-slate-200 overflow-hidden">
+                                            {/* Toolbar for tool_end (Result cards) */}
+                                            {step.type === 'tool_end' && idx === blocks.findIndex((b: ContentBlock) => b.type === 'text') && (
+                                                <div className="flex items-center justify-end gap-1 p-1 bg-slate-100 border-b border-slate-200">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            void copyToClipboard(fullCode);
+                                                            setCopied(true);
+                                                            setTimeout(() => setCopied(false), 2000);
+                                                        }}
+                                                        className="p-1 hover:bg-white rounded text-slate-500 hover:text-blue-600 transition-colors"
+                                                        title="Copy Code"
+                                                    >
+                                                        {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                                                    </button>
+                                                </div>
+                                            )}
+                                            <div ref={scrollRef} className="p-2 overflow-y-auto max-h-60 custom-scrollbar">
+                                                <pre className="text-[10px] leading-tight text-slate-700 whitespace-pre break-words font-medium">
+                                                    {formatContent(block.content)}
+                                                </pre>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        )}
-                        <div ref={scrollRef} className="p-2 overflow-y-auto max-h-60 custom-scrollbar">
-                            <pre className="text-[10px] leading-tight text-slate-700 whitespace-pre break-words font-medium">
-                                {formatContent(step.content)}
-                            </pre>
-                        </div>
-                    </div>
+                        );
+                    })()}
                 </div>
             )}
         </div>

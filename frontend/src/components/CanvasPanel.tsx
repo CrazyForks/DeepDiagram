@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { useChatStore } from '../store/chatStore';
-import { cn } from '../lib/utils';
+import { cn, processContent } from '../lib/utils';
 import { Download, RotateCcw, RefreshCw } from 'lucide-react';
 import { MindmapAgent } from './agents/MindmapAgent';
 import { FlowAgent } from './agents/FlowAgent';
@@ -8,6 +8,7 @@ import { ChartsAgent } from './agents/ChartsAgent';
 import { DrawioAgent } from './agents/DrawioAgent';
 import { MermaidAgent } from './agents/MermaidAgent';
 import { InfographicAgent } from './agents/InfographicAgent';
+import { ErrorBoundary } from './common/ErrorBoundary';
 import type { AgentRef } from './agents/types';
 
 export const CanvasPanel = () => {
@@ -161,15 +162,20 @@ export const CanvasPanel = () => {
                                 );
                                 return toolEndStep?.content || '';
                             };
-                            const content = getCode();
+                            const rawContent = getCode();
+                            const { code } = processContent(rawContent);
 
-                            if (activeAgent === 'flowchart') return <FlowAgent key={`flow-${renderKey}`} ref={agentRef} content={content} />;
-                            if (activeAgent === 'mindmap') return <MindmapAgent key={`mindmap-${renderKey}`} ref={agentRef} content={content} />;
-                            if (activeAgent === 'charts') return <ChartsAgent key={`charts-${renderKey}`} ref={agentRef} content={content} />;
-                            if (activeAgent === 'drawio') return <DrawioAgent key={`drawio-${renderKey}`} ref={agentRef} content={content} />;
-                            if (activeAgent === 'mermaid') return <MermaidAgent key={`mermaid-${renderKey}`} ref={agentRef} content={content} />;
-                            if (activeAgent === 'infographic') return <InfographicAgent key={`infographic-${renderKey}`} ref={agentRef} content={content} />;
-                            return null;
+                            const renderAgent = () => {
+                                if (activeAgent === 'flowchart') return <ErrorBoundary><FlowAgent key={`flow-${renderKey}`} ref={agentRef} content={code} /></ErrorBoundary>;
+                                if (activeAgent === 'mindmap') return <ErrorBoundary><MindmapAgent key={`mindmap-${renderKey}`} ref={agentRef} content={code} /></ErrorBoundary>;
+                                if (activeAgent === 'charts') return <ErrorBoundary><ChartsAgent key={`charts-${renderKey}`} ref={agentRef} content={code} /></ErrorBoundary>;
+                                if (activeAgent === 'drawio') return <ErrorBoundary><DrawioAgent key={`drawio-${renderKey}`} ref={agentRef} content={code} /></ErrorBoundary>;
+                                if (activeAgent === 'mermaid') return <ErrorBoundary><MermaidAgent key={`mermaid-${renderKey}`} ref={agentRef} content={code} /></ErrorBoundary>;
+                                if (activeAgent === 'infographic') return <ErrorBoundary><InfographicAgent key={`infographic-${renderKey}`} ref={agentRef} content={code} /></ErrorBoundary>;
+                                return null;
+                            };
+
+                            return renderAgent();
                         })()}
 
                         {!activeMessageId && !isLoading && (

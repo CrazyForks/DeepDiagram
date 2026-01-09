@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallba
 import mermaid from 'mermaid';
 import { TransformWrapper, TransformComponent, useControls } from 'react-zoom-pan-pinch';
 import { useChatStore } from '../../store/chatStore';
+import { cleanContent } from '../../lib/utils';
 import { ZoomIn, ZoomOut, Maximize, AlertCircle } from 'lucide-react';
 import type { AgentRef, AgentProps } from './types';
 
@@ -46,7 +47,7 @@ const ZoomControls = ({ onFit }: { onFit: () => void }) => {
 
 export const MermaidAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) => {
     const { isStreamingCode } = useChatStore();
-    const currentCode = content;
+    const currentCode = cleanContent(content);
     const containerRef = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [svgContent, setSvgContent] = useState<string>('');
@@ -215,10 +216,25 @@ export const MermaidAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) 
 
     useEffect(() => {
         if (!wrapperRef.current || !isLoaded || !dimensions) return;
-        const observer = new ResizeObserver(() => handleZoomToFit());
-        observer.observe(wrapperRef.current);
-        handleZoomToFit();
-        return () => observer.disconnect();
+
+        let observer: ResizeObserver | null = null;
+        try {
+            observer = new ResizeObserver(() => {
+                requestAnimationFrame(() => {
+                    handleZoomToFit();
+                });
+            });
+            observer.observe(wrapperRef.current);
+            handleZoomToFit();
+        } catch (e) {
+            console.error("ResizeObserver error:", e);
+        }
+
+        return () => {
+            if (observer) {
+                observer.disconnect();
+            }
+        };
     }, [isLoaded, dimensions, handleZoomToFit]);
 
     if (!currentCode) {

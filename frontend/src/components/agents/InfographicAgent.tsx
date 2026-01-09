@@ -1,5 +1,6 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
+import { cleanContent } from '../../lib/utils';
 import * as AntVInfographic from '@antv/infographic';
 import type { AgentRef, AgentProps } from './types';
 import { AlertCircle } from 'lucide-react';
@@ -89,7 +90,7 @@ if (AntVInfographic.registerResourceLoader) {
 
 export const InfographicAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) => {
     const { isStreamingCode } = useChatStore();
-    const currentCode = content;
+    const currentCode = cleanContent(content);
     const containerRef = useRef<HTMLDivElement>(null);
     const infographicRef = useRef<any>(null);
     const [error, setError] = useState<string | null>(null);

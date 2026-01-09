@@ -38,3 +38,71 @@ export async function copyToClipboard(text: string): Promise<boolean> {
         return false;
     }
 }
+
+/**
+ * Removes <think>...</think> tags and their content from the string.
+ * This is useful for cleaning up output from reasoning models like DeepSeek-R1.
+ */
+export function cleanContent(content: string): string {
+    if (!content) return '';
+    // Removes <think>...</think> (case insensitive) and handles newlines
+    return content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+export type ContentBlock =
+    | { type: 'text'; content: string }
+    | { type: 'thought'; content: string; isThinking?: boolean };
+
+/**
+ * Parses content into a list of text and thought blocks.
+ * Preserves the order of appearance.
+ */
+export function parseMixedContent(content: string): ContentBlock[] {
+    if (!content) return [];
+
+    const blocks: ContentBlock[] = [];
+    const thinkRegex = /<think>([\s\S]*?)<\/think>/gi;
+    let lastIndex = 0;
+    let match;
+
+    // 1. Find all complete blocks
+    while ((match = thinkRegex.exec(content)) !== null) {
+        // Add preceding text
+        if (match.index > lastIndex) {
+            const text = content.slice(lastIndex, match.index);
+            if (text) blocks.push({ type: 'text', content: text });
+        }
+
+        // Add thought block
+        blocks.push({ type: 'thought', content: match[1].trim() });
+        lastIndex = thinkRegex.lastIndex;
+    }
+
+    // 2. Check for remaining partial block (streaming)
+    const remaining = content.slice(lastIndex);
+    const partialThinkMatch = remaining.match(/<think>([\s\S]*)$/i);
+
+    if (partialThinkMatch) {
+        // Add text before the partial block
+        if (partialThinkMatch.index && partialThinkMatch.index > 0) {
+            blocks.push({ type: 'text', content: remaining.slice(0, partialThinkMatch.index) });
+        }
+        // Add partial thought
+        blocks.push({ type: 'thought', content: partialThinkMatch[1].trim(), isThinking: true });
+    } else if (remaining) {
+        // Add remaining text
+        blocks.push({ type: 'text', content: remaining });
+    }
+
+    return blocks;
+}
+
+// Keep a lightweight compatibility wrapper for places that just need clean code
+export function processContent(content: string): { thought: string | null; code: string; isThinking: boolean } {
+    const blocks = parseMixedContent(content);
+    const thoughts = blocks.filter(b => b.type === 'thought').map(b => b.content).join('\n\n');
+    const code = blocks.filter(b => b.type === 'text').map(b => b.content).join('');
+    // Use boolean OR on undefined/boolean to detect if any block is thinking
+    const isThinking = blocks.some(b => b.type === 'thought' && b.isThinking);
+    return { thought: thoughts || null, code, isThinking };
+}

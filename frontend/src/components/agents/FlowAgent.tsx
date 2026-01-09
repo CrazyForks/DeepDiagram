@@ -14,7 +14,7 @@ import ReactFlow, {
     MarkerType,
     type Connection
 } from 'reactflow';
-import { cn } from '../../lib/utils';
+import { cn, cleanContent } from '../../lib/utils';
 import { Play, Flag, Box, HelpCircle, AlertCircle } from 'lucide-react';
 import 'reactflow/dist/style.css';
 import { toPng, toSvg } from 'html-to-image';
@@ -215,7 +215,7 @@ const nodeTypes = {
 
 export const FlowAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) => {
     const { isStreamingCode } = useChatStore();
-    const currentCode = content;
+    const currentCode = cleanContent(content);
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [error, setError] = useState<string | null>(null);

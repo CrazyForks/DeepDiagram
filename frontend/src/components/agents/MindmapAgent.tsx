@@ -1,5 +1,6 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
+import { cleanContent } from '../../lib/utils';
 import { Transformer } from 'markmap-lib';
 import type { AgentRef, AgentProps } from './types';
 import MindElixir from 'mind-elixir';
@@ -42,7 +43,7 @@ const convertToMarkdown = (node: any, level: number = 1): string => {
 
 export const MindmapAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) => {
     const { isStreamingCode } = useChatStore();
-    const currentCode = content;
+    const currentCode = cleanContent(content);
     const mindmapRef = useRef<HTMLDivElement>(null);
     const mindmapInstanceRef = useRef<any>(null);
     const [error, setError] = useState<string | null>(null);

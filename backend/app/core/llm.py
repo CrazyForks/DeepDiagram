@@ -8,12 +8,12 @@ def get_llm(model_name: str | None = None, temperature: float = 0.3):
     """
 
     max_tokens = settings.MAX_TOKENS
-    
     # Priority: DeepSeek if key is present
     if settings.DEEPSEEK_API_KEY:
         # Override standard OpenAI model names to DeepSeek default
         model = settings.MODEL_ID or "deepseek-chat"
-             
+    
+        
         return ChatOpenAI(
             api_key=settings.DEEPSEEK_API_KEY,
             base_url=settings.DEEPSEEK_BASE_URL,
