@@ -9,6 +9,7 @@ import {
     Code2,
     Command,
     Copy,
+    Github,
     History,
     Loader2,
     MessageSquare,
@@ -702,9 +703,20 @@ export const ChatPanel = () => {
         <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
             <div className="p-4 border-b border-slate-200 bg-white/80 backdrop-blur-md sticky top-0 z-10 flex items-center justify-between">
                 <div>
-                    <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                        DeepDiagram AI
-                    </h1>
+                    <div className="flex items-center gap-2">
+                        <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                            DeepDiagram AI
+                        </h1>
+                        <a
+                            href="https://github.com/twwch/DeepDiagram"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1 rounded-full hover:bg-slate-100 text-slate-950 transition-colors"
+                            title="View on GitHub"
+                        >
+                            <Github className="w-5 h-5 fill-current" />
+                        </a>
+                    </div>
                     <p className="text-xs text-slate-500 mt-1">Describe what you want to create or upload an image.</p>
                 </div>
 
