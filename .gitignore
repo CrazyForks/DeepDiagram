@@ -1,2 +1,4 @@
 # Virtual environments
 docker-compose-test.yml
+
+.DS_Store 
