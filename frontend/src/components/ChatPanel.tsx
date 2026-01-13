@@ -1,29 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-    AlertCircle,
-    BarChart3,
-    Check,
-    ChevronDown,
-    ChevronLeft,
-    ChevronRight,
-    Code2,
-    Command,
-    Copy,
-    Github,
-    History,
-    Loader2,
-    MessageSquare,
-    Network,
-    Paperclip,
-    PenTool,
-    Plus,
-    RotateCcw,
-    Send,
-    Square,
-    Trash2,
-    Workflow,
-    X
-} from 'lucide-react';
+import { Plus, History, ChevronRight, MessageSquare, Trash2, Github, Send, Square, Check, Copy, AlertCircle, RotateCcw, ChevronDown, ChevronUp, Paperclip, Command, Settings, Workflow, Network, Code2, BarChart3, PenTool, X, ChevronLeft, Loader2, Sparkles } from 'lucide-react';
+import { useSettingsStore } from '../store/settingsStore';
+import { SettingsModal } from './common/SettingsModal';
 import { useChatStore } from '../store/chatStore';
 import { cn, copyToClipboard, parseMixedContent, type ContentBlock } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
@@ -141,6 +119,38 @@ export const ChatPanel = () => {
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
+    const { models, activeModelId, setActiveModelId, hasShownRecommendation, setHasShownRecommendation } = useSettingsStore();
+    const activeModel = models.find(m => m.id === activeModelId);
+    const [showRecommendation, setShowRecommendation] = useState(false);
+    const modelSelectorRef = useRef<HTMLDivElement>(null);
+
+    // Close model selector when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target as Node)) {
+                setIsModelSelectorOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Show recommendation if no models configured
+    useEffect(() => {
+        if (models.length === 0 && !hasShownRecommendation) {
+            const timer = setTimeout(() => {
+                setShowRecommendation(true);
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [models.length, hasShownRecommendation]);
+
+    const handleCloseRecommendation = () => {
+        setShowRecommendation(false);
+        setHasShownRecommendation(true);
+    };
 
     const handleCopy = (msg: Message, index: number) => {
         let textToCopy = msg.content;
@@ -423,6 +433,15 @@ export const ChatPanel = () => {
         // Create new AbortController
         abortControllerRef.current = new AbortController();
 
+        console.log('--- SUBMIT DEBUG ---');
+        console.log('Active Model ID:', activeModelId);
+        console.log('Active Model found:', !!activeModel);
+        if (activeModel) {
+            console.log('Model ID:', activeModel.modelId);
+            console.log('Base URL:', activeModel.baseUrl);
+        }
+        console.log('--------------------');
+
         try {
             const response = await fetch('/api/chat/completions', {
                 method: 'POST',
@@ -433,7 +452,10 @@ export const ChatPanel = () => {
                     session_id: sessionId,
                     context: {},
                     parent_id: effectiveParentId,
-                    is_retry: isRetry
+                    is_retry: isRetry,
+                    model_id: activeModel?.modelId,
+                    api_key: activeModel?.apiKey,
+                    base_url: activeModel?.baseUrl
                 }),
                 signal: abortControllerRef.current.signal
             });
@@ -492,14 +514,19 @@ export const ChatPanel = () => {
                                         const targetIdx = allMsgs.findIndex(m => m.role === data.role && (!m.id || m.id < 0));
                                         if (targetIdx !== -1) {
                                             const oldId = allMsgs[targetIdx].id;
-                                            allMsgs[targetIdx].id = data.id;
-                                            if (data.turn_index !== undefined) {
-                                                allMsgs[targetIdx].turn_index = data.turn_index;
-                                            }
-                                            allMsgs.forEach(m => {
+                                            const updatedMsg = {
+                                                ...allMsgs[targetIdx],
+                                                id: data.id,
+                                                turn_index: data.turn_index !== undefined ? data.turn_index : allMsgs[targetIdx].turn_index
+                                            };
+                                            allMsgs[targetIdx] = updatedMsg;
+
+                                            // Atomic update of parent_id references
+                                            const finalMsgs = allMsgs.map(m => {
                                                 if (m.parent_id === oldId && oldId !== undefined) {
-                                                    m.parent_id = data.id;
+                                                    return { ...m, parent_id: data.id };
                                                 }
+                                                return m;
                                             });
 
                                             let activeId = state.activeMessageId;
@@ -507,12 +534,12 @@ export const ChatPanel = () => {
                                                 activeId = data.id;
                                             }
 
-                                            const turn = allMsgs[targetIdx].turn_index ?? 0;
+                                            const turn = updatedMsg.turn_index ?? 0;
                                             const newSelectedVersions = { ...state.selectedVersions, [turn]: data.id };
 
                                             // Rebuild messages list
                                             const turnMap: Record<number, Message[]> = {};
-                                            allMsgs.forEach(m => {
+                                            finalMsgs.forEach(m => {
                                                 const t = m.turn_index || 0;
                                                 if (!turnMap[t]) turnMap[t] = [];
                                                 turnMap[t].push(m);
@@ -528,7 +555,7 @@ export const ChatPanel = () => {
                                             });
 
                                             return {
-                                                allMessages: allMsgs,
+                                                allMessages: finalMsgs,
                                                 messages: newMessages,
                                                 selectedVersions: newSelectedVersions,
                                                 activeMessageId: activeId
@@ -703,7 +730,7 @@ export const ChatPanel = () => {
                                     break;
 
                                 case 'error':
-                                    updateLastMessage(thoughtBuffer + `\n\n[Error: ${data.message}]`, false, 'error', eventSessionId);
+                                    updateLastMessage(data.message, false, 'error', eventSessionId);
                                     break;
                             }
                         } catch (jsonErr) {
@@ -717,7 +744,7 @@ export const ChatPanel = () => {
                 console.log('Fetch aborted');
             } else {
                 console.error('Error:', error);
-                updateLastMessage(thoughtBuffer + '\n\n[Error encountered]');
+                updateLastMessage(error.message || 'Error encountered', false, 'error');
             }
         } finally {
             setLoading(false);
@@ -753,15 +780,22 @@ export const ChatPanel = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {/* New Chat Button */}
+                    <button
+                        onClick={() => setIsSettingsOpen(true)}
+                        className="p-2.5 bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200 transition-all hover:text-blue-600 shadow-sm"
+                        title="Model Settings"
+                    >
+                        <Settings className="w-5 h-5" />
+                    </button>
+
                     <button
                         onClick={() => {
                             stopGeneration();
                             createNewChat();
                         }}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20 active:scale-95"
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 text-white rounded-full text-sm font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20 active:scale-95"
                     >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="w-4 h-4" />
                         <span>New Chat</span>
                     </button>
 
@@ -991,7 +1025,7 @@ export const ChatPanel = () => {
                         (activeMessageId === null && !msg.id && idx === messages.map(m => m.id === undefined && m.role === 'assistant').lastIndexOf(true))
                     );
                     const hasVisibleSteps = msg.steps && msg.steps.some(s => !(s.type === 'agent_select' && (s.name === 'general' || s.name === 'general_agent')));
-                    const hasContent = (msg.content || '').trim() || hasVisibleSteps || (msg.images && msg.images.length > 0);
+                    const hasContent = (msg.content || '').trim() || hasVisibleSteps || (msg.images && msg.images.length > 0) || msg.error;
 
                     if (msg.role === 'assistant' && !hasContent && !isGenerating && !versionInfo) {
                         return null;
@@ -1052,6 +1086,17 @@ export const ChatPanel = () => {
                                         </div>
                                     );
                                 })()}
+                                {msg.error && (
+                                    <div className="mt-3 p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-2.5 text-red-700 animate-in fade-in slide-in-from-top-2 duration-300">
+                                        <div className="p-1 bg-red-100 rounded-lg">
+                                            <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[11px] font-bold uppercase tracking-wider mb-0.5 opacity-70">Generation Failed</p>
+                                            <p className="text-xs leading-relaxed break-words">{msg.error}</p>
+                                        </div>
+                                    </div>
+                                )}
                                 {isGenerating && (
                                     <div className={cn(
                                         "flex items-center space-x-2 py-1 animate-pulse",
@@ -1279,6 +1324,127 @@ export const ChatPanel = () => {
                                 >
                                     <Paperclip className="w-5 h-5" />
                                 </button>
+
+                                <div className="relative" ref={modelSelectorRef}>
+                                    <button
+                                        type="button"
+                                        onClick={() => models.length > 0 && setIsModelSelectorOpen(!isModelSelectorOpen)}
+                                        className={cn(
+                                            "flex items-center gap-1.5 px-2 py-1 rounded-lg border transition-all",
+                                            activeModel
+                                                ? "bg-green-50/50 border-green-200 text-green-700"
+                                                : "bg-slate-100/50 border-slate-200/50 text-slate-500",
+                                            models.length > 0 && "hover:bg-white hover:shadow-sm cursor-pointer"
+                                        )}
+                                    >
+                                        <div className={cn("w-1.5 h-1.5 rounded-full", activeModel ? "bg-green-500" : "bg-blue-500")} />
+                                        <span className="text-[10px] font-bold uppercase tracking-tight">
+                                            {activeModel ? activeModel.name : "Default Model"}
+                                        </span>
+                                        {models.length > 0 && (
+                                            isModelSelectorOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                                        )}
+                                    </button>
+
+                                    {isModelSelectorOpen && (
+                                        <div className="absolute bottom-full left-0 mb-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in slide-in-from-bottom-2 duration-200">
+                                            <div className="p-2 border-b border-slate-50">
+                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2">Select Model</span>
+                                            </div>
+                                            <div className="max-h-60 overflow-y-auto py-1 custom-scrollbar">
+                                                <button
+                                                    onClick={() => {
+                                                        setActiveModelId(null);
+                                                        setIsModelSelectorOpen(false);
+                                                    }}
+                                                    className={cn(
+                                                        "w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition-all hover:bg-slate-50 text-left",
+                                                        !activeModelId ? "text-blue-600 bg-blue-50/30" : "text-slate-600"
+                                                    )}
+                                                >
+                                                    <div className={cn("w-1.5 h-1.5 rounded-full", !activeModelId ? "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" : "bg-slate-300")} />
+                                                    Default Model
+                                                </button>
+                                                {models.map((model) => (
+                                                    <button
+                                                        key={model.id}
+                                                        onClick={() => {
+                                                            setActiveModelId(model.id);
+                                                            setIsModelSelectorOpen(false);
+                                                        }}
+                                                        className={cn(
+                                                            "w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition-all hover:bg-slate-50 text-left border-t border-slate-50/50",
+                                                            activeModelId === model.id ? "text-blue-600 bg-blue-50/30" : "text-slate-600"
+                                                        )}
+                                                    >
+                                                        <div className={cn("w-1.5 h-1.5 rounded-full", activeModelId === model.id ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" : "bg-slate-300")} />
+                                                        <div className="flex flex-col">
+                                                            <span>{model.name}</span>
+                                                            <span className="text-[8px] text-slate-400 font-normal truncate max-w-[140px] uppercase tracking-tighter">{model.modelId}</span>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <div className="p-1 border-t border-slate-100 bg-slate-50/50">
+                                                <button
+                                                    onClick={() => {
+                                                        setIsModelSelectorOpen(false);
+                                                        setIsSettingsOpen(true);
+                                                    }}
+                                                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[10px] font-bold text-blue-600 hover:bg-white rounded-lg transition-all"
+                                                >
+                                                    <Settings className="w-3 h-3" />
+                                                    Manage Models
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {models.length === 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsSettingsOpen(true)}
+                                            className="text-[10px] font-bold text-blue-600 hover:underline ml-1"
+                                        >
+                                            Configure Custom Models
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Recommendation Popup */}
+                                {showRecommendation && models.length === 0 && (
+                                    <div className="absolute bottom-full left-0 mb-4 w-72 bg-white rounded-2xl shadow-2xl border border-blue-100 p-4 z-50 animate-in slide-in-from-bottom-4 duration-300">
+                                        <div className="flex items-start gap-3">
+                                            <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                                                <Sparkles className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex items-center justify-between">
+                                                    <h4 className="text-xs font-bold text-slate-800">Pro Tip</h4>
+                                                    <button
+                                                        onClick={handleCloseRecommendation}
+                                                        className="text-slate-400 hover:text-slate-600 transition-colors"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                                    Suggest configuring a smarter model (like <strong>Claude 3.7 Sonnet</strong>) for better architectural reasoning and diagram layout quality.
+                                                </p>
+                                                <button
+                                                    onClick={() => {
+                                                        handleCloseRecommendation();
+                                                        setIsSettingsOpen(true);
+                                                    }}
+                                                    className="mt-3 w-full py-1.5 bg-blue-600 text-white text-[10px] font-bold rounded-lg hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20"
+                                                >
+                                                    Configure Now
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="absolute -bottom-2 left-6 w-4 h-4 bg-white border-r border-b border-blue-100 rotate-45" />
+                                    </div>
+                                )}
                             </div>
 
                             <button
@@ -1300,6 +1466,7 @@ export const ChatPanel = () => {
                     </div>
                 </form>
             </div>
+            <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
         </div>
     );
 };

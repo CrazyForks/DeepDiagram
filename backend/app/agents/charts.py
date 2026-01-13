@@ -2,11 +2,9 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 from app.state.state import AgentState
 from app.core.config import settings
-from app.core.llm import get_llm, get_thinking_instructions
+from app.core.llm import get_llm, get_configured_llm, get_thinking_instructions
 from app.core.context import set_context, get_messages, get_context
 import json
-
-llm = get_llm()
 
 CHARTS_SYSTEM_PROMPT = """You are a World-Class Data Visualization Specialist. Your goal is to generate professional, insightful, and aesthetically pleasing ECharts configurations (JSON).
 
@@ -60,6 +58,12 @@ async def create_chart(instruction: str):
         prompt.append(HumanMessage(content=f"Instruction: {instruction}"))
     
     full_content = ""
+    model_config = context.get("model_config")
+    llm = get_llm(
+        model_name=model_config.get("model_id") if model_config else None,
+        api_key=model_config.get("api_key") if model_config else None,
+        base_url=model_config.get("base_url") if model_config else None
+    )
     async for chunk in llm.astream(prompt):
         if chunk.content:
             full_content += chunk.content
@@ -82,7 +86,6 @@ async def create_chart(instruction: str):
     return option_str.strip()
 
 tools = [create_chart]
-llm_with_tools = llm.bind_tools(tools)
 
 async def charts_agent_node(state: AgentState):
     messages = state['messages']
@@ -101,7 +104,7 @@ async def charts_agent_node(state: AgentState):
         if hasattr(msg, 'content') and not msg.content:
             msg.content = "Generate a chart"
 
-    set_context(messages, current_code=current_code)
+    set_context(messages, current_code=current_code, model_config=state.get("model_config"))
     
     system_prompt = SystemMessage(content="""You are a World-Class Data Analysis Consultant.
     YOUR MISSION is to act as a Strategic Advisor. When a user requests a chart, don't just "draw" it—ANALYZE and EXPAND it.
@@ -118,6 +121,9 @@ async def charts_agent_node(state: AgentState):
     ### PROACTIVENESS:
     - BE DECISIVE. If you see an opportunity to add a "Goal Target" line or "YoY Growth" metrics, include it in the tool instruction.
     """ + get_thinking_instructions())
+    
+    llm = get_configured_llm(state)
+    llm_with_tools = llm.bind_tools(tools)
     
     full_response = None
     async for chunk in llm_with_tools.astream([system_prompt] + messages):

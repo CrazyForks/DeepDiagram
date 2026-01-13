@@ -6,4 +6,4 @@ class AgentState(TypedDict):
     messages: Annotated[List[Any], operator.add]
     active_agent: Optional[str] = None
     intent: Optional[str] = None
-    # Add other state variables as needed
+    model_config: Optional[Dict[str, str]] = None

@@ -2,10 +2,8 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 from app.state.state import AgentState
 from app.core.config import settings
-from app.core.llm import get_llm, get_thinking_instructions
+from app.core.llm import get_llm, get_configured_llm, get_thinking_instructions
 from app.core.context import set_context, get_messages, get_context
-
-llm = get_llm()
 
 MINDMAP_SYSTEM_PROMPT = """You are a World-Class Strategic Thinking Partner and Knowledge Architect. Your goal is to generate deep, insightful, and structured mindmaps using Markdown (Markmap).
 
@@ -38,6 +36,14 @@ async def create_mindmap(instruction: str):
     messages = get_messages()
     context = get_context()
     current_code = context.get("current_code", "")
+    model_config = context.get("model_config")
+    
+    # Get configured LLM
+    llm = get_llm(
+        api_key=model_config.get("api_key") if model_config else None,
+        base_url=model_config.get("base_url") if model_config else None,
+        model_name=model_config.get("model_id") if model_config else None
+    )
     
     # Call LLM to generate the Mindmap code
     system_msg = MINDMAP_SYSTEM_PROMPT + get_thinking_instructions()
@@ -66,10 +72,10 @@ async def create_mindmap(instruction: str):
     return full_content
 
 tools = [create_mindmap]
-llm_with_tools = llm.bind_tools(tools)
 
 async def mindmap_agent_node(state: AgentState):
     messages = state['messages']
+    model_config = state.get("model_config")
     
     # 动态从历史中提取最新的 mindmap 代码（寻找最后一条 tool 消息且内容非空）
     current_code = ""
@@ -87,7 +93,7 @@ async def mindmap_agent_node(state: AgentState):
         if hasattr(msg, 'content') and not msg.content:
             msg.content = "Generate a mindmap"
 
-    set_context(messages, current_code=current_code)
+    set_context(messages, current_code=current_code, model_config=model_config)
     
     system_prompt = """You are a Visionary Strategic Thinking Partner.
     YOUR MISSION is to act as a Mental Model Consultant. When a user provides a topic, don't just "brainstorm" it—MAP the entire ecosystem.
@@ -104,6 +110,13 @@ async def mindmap_agent_node(state: AgentState):
     ### PROACTIVENESS:
     - BE DECISIVE. If a topic has obvious "Pros/Cons" or "Future Risks", include them in the brainstormed instructions.
     """ + get_thinking_instructions()
+    
+    llm = get_llm(
+        api_key=model_config.get("api_key") if model_config else None,
+        base_url=model_config.get("base_url") if model_config else None,
+        model_name=model_config.get("model_id") if model_config else None
+    )
+    llm_with_tools = llm.bind_tools(tools)
     
     full_response = None
     async for chunk in llm_with_tools.astream([system_prompt] + messages):

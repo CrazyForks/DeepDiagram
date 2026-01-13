@@ -20,6 +20,7 @@ export interface Message {
     agent?: AgentType | string;
     turn_index?: number;
     created_at?: string;
+    error?: string; // Optional error message
 }
 
 export interface ChatSession {

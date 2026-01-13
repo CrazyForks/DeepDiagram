@@ -2,10 +2,8 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 from app.state.state import AgentState
 from app.core.config import settings
-from app.core.llm import get_llm, get_thinking_instructions
+from app.core.llm import get_llm, get_configured_llm, get_thinking_instructions
 from app.core.context import set_context, get_messages, get_context
-
-llm = get_llm()
 
 MERMAID_SYSTEM_PROMPT = """You are a World-Class Technical Documentation Specialist and Mermaid Diagram Expert. Your goal is to generate professional, semantically rich, and accurate Mermaid syntax.
 
@@ -35,6 +33,14 @@ async def create_mermaid(instruction: str):
     messages = get_messages()
     context = get_context()
     current_code = context.get("current_code", "")
+    model_config = context.get("model_config")
+    
+    # Get configured LLM
+    llm = get_llm(
+        api_key=model_config.get("api_key") if model_config else None,
+        base_url=model_config.get("base_url") if model_config else None,
+        model_name=model_config.get("model_id") if model_config else None
+    )
     
     # Call LLM to generate the Mermaid code
     system_msg = MERMAID_SYSTEM_PROMPT + get_thinking_instructions()
@@ -62,10 +68,10 @@ async def create_mermaid(instruction: str):
     return cleaned_code.strip()
 
 tools = [create_mermaid]
-llm_with_tools = llm.bind_tools(tools)
 
 async def mermaid_agent_node(state: AgentState):
     messages = state['messages']
+    model_config = state.get("model_config")
     
     # 动态从历史中提取最新的 mermaid 代码（寻找最后一条 tool 消息且内容包含 graph/sequenceDiagram 等）
     current_code = ""
@@ -81,7 +87,7 @@ async def mermaid_agent_node(state: AgentState):
         if hasattr(msg, 'content') and not msg.content:
             msg.content = "Generate a mermaid diagram"
 
-    set_context(messages, current_code=current_code)
+    set_context(messages, current_code=current_code, model_config=model_config)
     
     system_prompt = SystemMessage(content="""You are a World-Class Technical Documentation Specialist.
     YOUR MISSION is to act as a Solutions Architect. When a user asks for a diagram, don't just "syntax" it—FORMALIZE and DOCUMENT it.
@@ -98,6 +104,9 @@ async def mermaid_agent_node(state: AgentState):
     ### PROACTIVENESS:
     - BE DECISIVE. If you see an opportunity to add a "Fallback State" or a "User Feedback Loop", include it in the architect's instructions.
     """ + get_thinking_instructions())
+    
+    llm = get_configured_llm(state)
+    llm_with_tools = llm.bind_tools(tools)
     
     full_response = None
     async for chunk in llm_with_tools.astream([system_prompt] + messages):

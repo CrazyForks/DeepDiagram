@@ -1,8 +1,6 @@
 from langchain_core.messages import SystemMessage
 from app.state.state import AgentState
-from app.core.llm import get_llm
-
-llm = get_llm()
+from app.core.llm import get_llm, get_configured_llm
 
 async def general_agent_node(state: AgentState):
     messages = state['messages']
@@ -22,5 +20,6 @@ async def general_agent_node(state: AgentState):
     DO NOT call any tools. Just chat.
     """)
     
+    llm = get_configured_llm(state)
     response = await llm.ainvoke([system_prompt] + messages)
     return {"messages": [response]}

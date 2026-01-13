@@ -99,8 +99,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (targetIdx === -1 && allMsgs.length > 0) targetIdx = allMsgs.length - 1;
 
         if (targetIdx !== -1) {
-            const msg = allMsgs[targetIdx];
-            msg.content = content || '';
+            const msg = { ...allMsgs[targetIdx] };
+            if (status === 'error') {
+                msg.error = content;
+            } else {
+                msg.content = content || '';
+            }
+            allMsgs[targetIdx] = msg;
 
             // Sync to canvas state if active and should sync
             const currentCanvasState = getCanvasState();
@@ -152,7 +157,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (targetIdx === -1 && allMsgs.length > 0) targetIdx = allMsgs.length - 1;
 
         if (targetIdx !== -1) {
-            const msg = allMsgs[targetIdx];
+            const msg = { ...allMsgs[targetIdx] };
             if (msg.steps && msg.steps.length > 0) {
                 const steps = [...msg.steps];
 
@@ -164,6 +169,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
                 steps[steps.length - 1] = { ...step, timestamp: Date.now() };
                 msg.steps = steps;
+                allMsgs[targetIdx] = msg;
 
                 // Rebuild messages list for UI sync
                 const turnMap: Record<number, Message[]> = {};
@@ -196,8 +202,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (targetIdx === -1 && allMsgs.length > 0) targetIdx = allMsgs.length - 1;
 
         if (targetIdx !== -1) {
-            const msg = allMsgs[targetIdx];
+            const msg = { ...allMsgs[targetIdx] };
             msg.steps = [...(msg.steps || []), { ...step, timestamp: Date.now() }];
+            allMsgs[targetIdx] = msg;
 
             // Sync agent type to message if it's an agent selection step
             if (step.type === 'agent_select') {
@@ -234,7 +241,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (targetIdx === -1 && allMsgs.length > 0) targetIdx = allMsgs.length - 1;
 
         if (targetIdx !== -1) {
-            const msg = allMsgs[targetIdx];
+            const msg = { ...allMsgs[targetIdx] };
             if (msg.steps && msg.steps.length > 0) {
                 const steps = [...msg.steps];
                 const lastStep = { ...steps[steps.length - 1] };
@@ -255,6 +262,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 if (type) lastStep.type = type;
                 steps[steps.length - 1] = lastStep;
                 msg.steps = steps;
+                allMsgs[targetIdx] = msg;
 
                 // Sync to canvas if it's a tool_end OR during streaming for immediate feedback
                 const currentCanvasState = getCanvasState();

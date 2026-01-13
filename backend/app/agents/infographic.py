@@ -2,10 +2,8 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 from app.state.state import AgentState
 from app.core.config import settings
-from app.core.llm import get_llm, get_thinking_instructions
+from app.core.llm import get_llm, get_configured_llm, get_thinking_instructions
 from app.core.context import set_context, get_messages, get_context
-
-llm = get_llm()
 
 INFOGRAPHIC_SYSTEM_PROMPT = """You are an expert Infographic Designer. Your goal is to generate professional AntV Infographic DSL syntax.
 
@@ -88,6 +86,12 @@ async def create_infographic(instruction: str):
     
     # Using astream to allow the graph's astream_events to catch it
     full_content = ""
+    model_config = context.get("model_config")
+    llm = get_llm(
+        model_name=model_config.get("model_id") if model_config else None,
+        api_key=model_config.get("api_key") if model_config else None,
+        base_url=model_config.get("base_url") if model_config else None
+    )
     async for chunk in llm.astream(prompt):
         content = chunk.content
         if content:
@@ -113,7 +117,6 @@ async def create_infographic(instruction: str):
     return dsl_str.strip()
 
 tools = [create_infographic]
-llm_with_tools = llm.bind_tools(tools)
 
 async def infographic_agent_node(state: AgentState):
     messages = state['messages']
@@ -132,7 +135,7 @@ async def infographic_agent_node(state: AgentState):
         if hasattr(msg, 'content') and not msg.content:
             msg.content = "Generate an infographic"
 
-    set_context(messages, current_code=current_code)
+    set_context(messages, current_code=current_code, model_config=state.get("model_config"))
     
     system_prompt = SystemMessage(content="""You are an expert Infographic Orchestrator. 
     YOUR MISSION is to act as a Consultative Creative Director. When a user provides a request, don't just pass it through—EXPAND and ENRICH it.
@@ -149,6 +152,9 @@ async def infographic_agent_node(state: AgentState):
     ### PROACTIVENESS:
     - BE DECISIVE. If you see an opportunity to add a "Did you know?" section or a "Key Metric", include it in the tool instruction.
     """ + get_thinking_instructions())
+    
+    llm = get_configured_llm(state)
+    llm_with_tools = llm.bind_tools(tools)
     
     full_response = None
     async for chunk in llm_with_tools.astream([system_prompt] + messages):

@@ -1,11 +1,9 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
 from app.core.config import settings
-from app.core.llm import get_llm, get_thinking_instructions
+from app.core.llm import get_llm, get_configured_llm, get_thinking_instructions
 from app.state.state import AgentState
-from app.core.context import get_messages
-
-llm = get_llm()
+from app.core.context import get_messages, get_context, set_context
 
 DRAWIO_SYSTEM_PROMPT = """You are a World-Class System Architect and Draw.io (mxGraph) Expert. Your goal is to generate professional, high-fidelity, and uncompressed Draw.io XML strings.
 
@@ -51,6 +49,13 @@ async def render_drawio_xml(instruction: str):
         prompt.append(HumanMessage(content=f"Instruction: {instruction}"))
     
     full_content = ""
+    context = get_context()
+    model_config = context.get("model_config")
+    llm = get_llm(
+        model_name=model_config.get("model_id") if model_config else None,
+        api_key=model_config.get("api_key") if model_config else None,
+        base_url=model_config.get("base_url") if model_config else None
+    )
     async for chunk in llm.astream(prompt):
         if chunk.content:
             full_content += chunk.content
@@ -79,7 +84,9 @@ async def drawio_agent_node(state: AgentState):
     for msg in messages:
         if hasattr(msg, 'content') and not msg.content:
             msg.content = "Generate a diagram"
+    set_context(messages, model_config=state.get("model_config"))
 
+    llm = get_configured_llm(state)
     llm_with_tools = llm.bind_tools(tools)
     
     system_prompt = SystemMessage(content="""You are a Visionary Principal System Architect.

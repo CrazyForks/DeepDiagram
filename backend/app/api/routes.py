@@ -22,6 +22,9 @@ class ChatRequest(BaseModel):
     context: dict = {}
     parent_id: int | None = None
     is_retry: bool = False
+    model_id: str | None = None
+    api_key: str | None = None
+    base_url: str | None = None
 
 async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenerator[str, None]:
     chat_service = ChatService(db)
@@ -145,6 +148,11 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
 
     inputs = {
         "messages": full_messages,
+        "model_config": {
+            "model_id": request.model_id,
+            "api_key": request.api_key,
+            "base_url": request.base_url
+        } if (request.model_id or request.api_key or request.base_url) else None
     }
     
     full_response_content = ""
@@ -293,6 +301,15 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
 
 @router.post("/chat/completions")
 async def chat_completions(request: ChatRequest, db: AsyncSession = Depends(get_session)):
+    # BRUTE FORCE LOGGING TO FILE
+    try:
+        with open("/Users/chenhao/codes/myself/DeepDiagram/llm_debug.log", "a") as f:
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{timestamp}] INCOMING REQUEST: model_id={request.model_id} | base_url={request.base_url} | api_key={request.api_key[:6] if request.api_key else 'None'}...\n")
+    except:
+        pass
+        
     return StreamingResponse(event_generator(request, db), media_type="text/event-stream")
 
 @router.get("/sessions")
