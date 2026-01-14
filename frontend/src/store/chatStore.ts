@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ChatState, Message, AgentType, Step } from '../types';
+import type { ChatState, Message, AgentType, Step, DocAnalysisBlock } from '../types';
 import { setCanvasState, getCanvasState } from './canvasState';
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -16,6 +16,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     selectedVersions: {},
     activeStepRef: null,
     toast: null,
+    inputFiles: [],
+    parsingStatus: null,
 
     setInput: (input) => set({ input }),
     setAgent: (agent) => {
@@ -45,6 +47,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     setInputImages: (images) => set({ inputImages: images }),
     addInputImage: (image) => set((state) => ({ inputImages: [...state.inputImages, image] })),
     clearInputImages: () => set({ inputImages: [] }),
+
+    setInputFiles: (files) => set({ inputFiles: files }),
+    addInputFile: (file) => set((state) => ({ inputFiles: [...state.inputFiles, file] })),
+    clearInputFiles: () => set({ inputFiles: [] }),
+    setParsingStatus: (status) => set({ parsingStatus: status }),
 
     reportError: (error) => set({ toast: { message: error, type: 'error' } }),
     reportSuccess: () => set({}),
@@ -314,6 +321,57 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return {};
     }),
 
+    updateDocAnalysisBlock: (index, content, status, append = true, sessionId) => set((state) => {
+        if (sessionId && sessionId !== state.sessionId) return {};
+        const allMsgs = [...state.allMessages];
+        const activeId = state.activeMessageId;
+        let targetIdx = -1;
+        if (activeId !== null) targetIdx = allMsgs.findIndex(m => m.id === activeId);
+        if (targetIdx === -1 && allMsgs.length > 0) targetIdx = allMsgs.length - 1;
+
+        if (targetIdx !== -1) {
+            const msg = { ...allMsgs[targetIdx] };
+            const blocks = [...(msg.docAnalysisBlocks || [])];
+            const existingIdx = blocks.findIndex(b => b.index === index);
+
+            if (existingIdx !== -1) {
+                const block = { ...blocks[existingIdx] };
+                block.content = append ? (block.content + content) : content;
+                block.status = status;
+                blocks[existingIdx] = block;
+            } else {
+                blocks.push({
+                    index,
+                    content,
+                    status
+                });
+                blocks.sort((a, b) => a.index - b.index);
+            }
+
+            msg.docAnalysisBlocks = blocks;
+            allMsgs[targetIdx] = msg;
+
+            // Rebuild messages list
+            const turnMap: Record<number, Message[]> = {};
+            allMsgs.forEach(m => {
+                const turn = m.turn_index || 0;
+                if (!turnMap[turn]) turnMap[turn] = [];
+                turnMap[turn].push(m);
+            });
+            const sortedTurns = Object.keys(turnMap).map(Number).sort((a, b) => a - b);
+            const newMessages: Message[] = [];
+            sortedTurns.forEach(turn => {
+                const siblings = turnMap[turn];
+                const selectedId = state.selectedVersions[turn];
+                const selected = siblings.find(s => s.id === selectedId) || siblings[siblings.length - 1];
+                newMessages.push(selected);
+            });
+
+            return { allMessages: allMsgs, messages: newMessages };
+        }
+        return {};
+    }),
+
     loadSessions: async () => {
         try {
             const response = await fetch('/api/sessions');
@@ -334,17 +392,54 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 const data = await response.json();
                 const history = data.messages || [];
 
-                const mappedMessages: Message[] = history.map((m: any) => ({
-                    id: m.id,
-                    parent_id: m.parent_id,
-                    role: m.role,
-                    content: m.content,
-                    images: m.images,
-                    steps: m.steps,
-                    agent: m.agent,
-                    turn_index: m.turn_index,
-                    created_at: m.created_at
-                }));
+                const mappedMessages: Message[] = history.map((m: any) => {
+                    // Extract docAnalysisBlocks from steps
+                    const docAnalysisBlocks: DocAnalysisBlock[] = [];
+                    if (m.steps) {
+                        m.steps.forEach((step: Step) => {
+                            if (step.type === 'doc_analysis') {
+                                try {
+                                    const content = JSON.parse(step.content || '{}');
+                                    if (typeof content === 'object' && content.index !== undefined) {
+                                        docAnalysisBlocks.push({
+                                            index: content.index,
+                                            content: content.content,
+                                            status: 'done'
+                                        });
+                                    } else {
+                                        // Legacy/Fallback
+                                        docAnalysisBlocks.push({
+                                            index: -1,
+                                            content: step.content || '',
+                                            status: 'done'
+                                        });
+                                    }
+                                } catch (e) {
+                                    // Fallback for plain text content
+                                    docAnalysisBlocks.push({
+                                        index: -1,
+                                        content: step.content || '',
+                                        status: 'done'
+                                    });
+                                }
+                            }
+                        });
+                    }
+                    docAnalysisBlocks.sort((a, b) => a.index - b.index);
+
+                    return {
+                        id: m.id,
+                        parent_id: m.parent_id,
+                        role: m.role,
+                        content: m.content,
+                        images: m.images,
+                        steps: m.steps,
+                        agent: m.agent,
+                        turn_index: m.turn_index,
+                        created_at: m.created_at,
+                        docAnalysisBlocks: docAnalysisBlocks.length > 0 ? docAnalysisBlocks : undefined,
+                    };
+                });
 
                 const initialSelected: Record<number, number> = {};
                 const turnMap: Record<number, Message[]> = {};

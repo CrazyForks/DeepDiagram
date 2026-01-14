@@ -18,10 +18,12 @@ class ChatRequest(BaseModel):
     agent_id: str | None = None
     prompt: str
     images: list[str] = []
+    files: list[dict] = []
     history: list[dict] = []
     context: dict = {}
     parent_id: int | None = None
     is_retry: bool = False
+    concurrency: int = 3
     model_id: str | None = None
     api_key: str | None = None
     base_url: str | None = None
@@ -50,11 +52,83 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
         user_msg = await chat_service.add_message(
             session_id, "user", request.prompt, 
             images=request.images,
+            files=request.files,
             parent_id=request.parent_id
         )
         last_user_msg_id = user_msg.id
     
     yield f"event: message_created\ndata: {json.dumps({'id': last_user_msg_id, 'role': 'user', 'turn_index': (user_msg.turn_index if not request.is_retry else history_map[last_user_msg_id].turn_index) if last_user_msg_id in history_map or not request.is_retry else 0})}\n\n"
+
+    # 4. Handle Document Parsing & Extraction
+    doc_context = ""
+    accumulated_steps = []
+    
+    # Check if we can reuse existing context (Retry case)
+    if request.is_retry and last_user_msg_id in history_map:
+        existing_msg = history_map[last_user_msg_id]
+        if existing_msg.file_context:
+            doc_context = existing_msg.file_context
+            yield f"event: status\ndata: {json.dumps({'content': 'Reusing previous document analysis...'})}\n\n"
+            logger.info(f"♻️ Reusing existing file context for message {last_user_msg_id}")
+
+    if not doc_context and request.files:
+        from app.services.file_service import FileParsingService, LLMExtractionService
+        parsing_service = FileParsingService()
+        extraction_service = LLMExtractionService({
+            "model_id": request.model_id,
+            "api_key": request.api_key,
+            "base_url": request.base_url
+        })
+        
+        all_parsed_text = ""
+        for file_info in request.files:
+            filename = file_info.get("name", "document")
+            yield f"event: status\ndata: {json.dumps({'content': f'Parsing {filename}...'})}\n\n"
+            parsed_text = await parsing_service.parse_file(filename, file_info.get("data", ""))
+            all_parsed_text += f"\n\n--- Document: {filename} ---\n{parsed_text}"
+        
+        if all_parsed_text.strip():
+            yield f"event: status\ndata: {json.dumps({'content': 'Extracting core data from documents...'})}\n\n"
+            
+            # Use dedicated events for document analysis to separate from tool flow
+            yield f"event: doc_analysis_start\ndata: {json.dumps({'session_id': session_id})}\n\n"
+            
+            async for result in extraction_service.extract_and_summarize(
+                all_parsed_text, 
+                concurrency=request.concurrency,
+                status_callback=None
+            ):
+                timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+                if result.get("is_final"):
+                    doc_context = result["content"]
+                    # Persist final synthesis
+                    accumulated_steps.append({
+                        "type": "doc_analysis",
+                        "name": "doc_analysis_synthesis",
+                        "content": json.dumps({"index": -1, "content": doc_context}),
+                        "status": "done",
+                        "timestamp": timestamp
+                    })
+                else:
+                    chunk_idx = result["index"]
+                    # Persist chunk
+                    accumulated_steps.append({
+                        "type": "doc_analysis",
+                        "name": f"doc_analysis_chunk_{chunk_idx}",
+                        "content": json.dumps({"index": chunk_idx, "content": result['content']}),
+                        "status": "done",
+                        "timestamp": timestamp
+                    })
+                    
+                    yield f"event: doc_analysis_chunk\ndata: {json.dumps({'content': result['content'], 'index': chunk_idx, 'session_id': session_id})}\n\n"
+            
+            yield f"event: doc_analysis_end\ndata: {json.dumps({'content': doc_context, 'session_id': session_id})}\n\n"
+
+            yield f"event: status\ndata: {json.dumps({'content': 'Document processing complete.'})}\n\n"
+            
+            # Persist newly generated context to the user message
+            if doc_context:
+                await chat_service.update_message(last_user_msg_id, file_context=doc_context)
     
     # Group messages by turn_index and pick the latest of each
     turn_to_latest = {}
@@ -130,8 +204,12 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
             formatted_history.append(AIMessage(content=content))
             
     # Current Message Construction (same as before)
+    current_prompt = request.prompt
+    if doc_context:
+        current_prompt = f"Document Context:\n{doc_context}\n\nUser Question:\n{current_prompt}"
+        
     if request.images:
-        content = [{"type": "text", "text": request.prompt}]
+        content = [{"type": "text", "text": current_prompt}]
         for image_data in request.images:
             content.append({
                 "type": "image_url",
@@ -139,7 +217,7 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
             })
         message = HumanMessage(content=content)
     else:
-        message = HumanMessage(content=request.prompt)
+        message = HumanMessage(content=current_prompt)
 
     # Combine
     full_messages = formatted_history + [message]
@@ -156,7 +234,6 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
     }
     
     full_response_content = ""
-    accumulated_steps = []
     selected_agent = None
     
     # Buffer to capture raw streamed content (including thoughts) for the current tool logic

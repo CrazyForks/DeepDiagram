@@ -24,12 +24,14 @@ class ChatService:
         role: str, 
         content: str, 
         images: list[str] | None = None,
+        files: list[dict] | None = None,
+        file_context: str | None = None,
         steps: list[any] | None = None,
         agent: str | None = None,
         parent_id: int | None = None
     ) -> ChatMessage:
         turn_index = 0
-        if parent_id:
+        if parent_id and parent_id > 0:
             parent_statement = select(ChatMessage).where(ChatMessage.id == parent_id)
             parent_result = await self.session.exec(parent_statement)
             parent = parent_result.first()
@@ -41,6 +43,8 @@ class ChatService:
             role=role, 
             content=content,
             images=images,
+            files=files,
+            file_context=file_context,
             steps=steps,
             agent=agent,
             parent_id=parent_id,
@@ -59,6 +63,19 @@ class ChatService:
             
         await self.session.commit()
         await self.session.refresh(message)
+        return message
+
+    async def update_message(self, message_id: int, **kwargs) -> ChatMessage | None:
+        statement = select(ChatMessage).where(ChatMessage.id == message_id)
+        result = await self.session.exec(statement)
+        message = result.first()
+        if message:
+            for key, value in kwargs.items():
+                if hasattr(message, key):
+                    setattr(message, key, value)
+            self.session.add(message)
+            await self.session.commit()
+            await self.session.refresh(message)
         return message
 
     async def get_history(self, session_id: int):

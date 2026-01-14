@@ -70,6 +70,11 @@
 - **Message Branching**: retry assistant responses to explore different visualization paths. Navigate between versions via built-in pagination.
 - **Robust Storage**: Powered by PostgreSQL to ensure high reliability for complex technical traces and multimodal content.
 
+### 📄 Intelligent Document Analysis
+- **Deep Content Understanding**: Automatically parses and chunks uploaded documents (PDF, DOCX, TXT, MD) to extract temporal data, key entities, and relationships.
+- **Persistent Memory**: Analysis results are persisted in the database, allowing the AI to retain context across page reloads and chat sessions.
+- **Time-Aware**: All agents are aware of the current date and time, enabling accurate timeline generation and schedule planning.
+
 ---
 
 ## ✨ User Interface Enhancements
@@ -81,6 +86,8 @@
   - **Contextual Render**: Trigger agent-specific rendering directly from the process trace.
   - **Live Feedback**: Real-time status tags (e.g., "Render Failed") that clear instantly on successful re-runs.
   - **Trace Logs**: Formatted JSON logs for debugging and transparency.
+- **Responsive Data Tables**: All data tables (in chat and analysis cards) are wrapped in responsive containers with premium styling, ensuring they never break the layout.
+- **Visual Loading States**: Clear visual feedback during history loading and content generation.
 
 ---
 
@@ -195,7 +202,10 @@ Visit `http://localhost`. The frontend will be served by Nginx on port 80 and wi
 - [x] Persistent Session & Chat History
 - [x] Message Branching & Versioning Logic
 - [x] One-Click Session Refresh (New Chat)
-- [ ] Extended Multimodal Support (PDF, Docx, etc.) for Context Parsing
+- [x] Extended Multimodal Support (PDF, Docx, etc.) for Context Parsing
+- [x] Intelligent Document Analysis & Chunking
+- [x] UI/UX Polishing (Responsive Tables, Loading States)
+- [ ] Collaborative Editing (Real-time Sync)
 
 ## Star History
 

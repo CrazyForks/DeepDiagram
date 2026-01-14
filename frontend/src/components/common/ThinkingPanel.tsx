@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronUp, BrainCircuit } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 interface ThinkingPanelProps {
     thought: string;
     isThinking?: boolean;
@@ -73,9 +76,13 @@ export const ThinkingPanel = ({ thought, isThinking = false, defaultExpanded = t
                 <div
                     ref={scrollRef}
                     onScroll={handleScroll}
-                    className="p-4 pt-0 text-sm text-slate-600 font-mono whitespace-pre-wrap leading-relaxed border-t border-slate-100/50 shadow-inner overflow-y-auto max-h-[300px] custom-scrollbar"
+                    className="p-4 pt-0 text-sm text-slate-600 font-mono leading-relaxed border-t border-slate-100/50 shadow-inner overflow-y-auto max-h-[300px] custom-scrollbar"
                 >
-                    {thought}
+                    <div className="prose prose-slate prose-sm max-w-none prose-p:my-0 prose-pre:bg-slate-900 prose-pre:text-slate-50 prose-table:border-collapse prose-table:border prose-table:border-slate-300 prose-td:border prose-td:border-slate-300 prose-td:p-1 prose-th:border prose-th:border-slate-300 prose-th:p-1 prose-th:bg-slate-100">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {thought}
+                        </ReactMarkdown>
+                    </div>
                     {isThinking && <span className="inline-block w-2 h-4 ml-1 align-middle bg-purple-500 animate-pulse" />}
                 </div>
             </div>

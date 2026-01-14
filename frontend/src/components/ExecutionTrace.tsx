@@ -4,6 +4,8 @@ import { BrainCircuit, Terminal, CheckCircle, ChevronDown, ChevronRight, Activit
 import { ThinkingPanel } from './common/ThinkingPanel';
 import { useChatStore } from '../store/chatStore';
 import type { Step } from '../types';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ExecutionTraceProps {
     steps: Step[];
@@ -206,10 +208,27 @@ const StepItem = ({ step, activeAgent, messageIndex, associatedResult, onRetry, 
                                                     </button>
                                                 </div>
                                             )}
-                                            <div ref={scrollRef} className="p-2 overflow-y-auto max-h-60 custom-scrollbar">
-                                                <pre className="text-[10px] leading-tight text-slate-700 whitespace-pre break-words font-medium">
-                                                    {formatContent(block.content)}
-                                                </pre>
+                                            <div ref={scrollRef} className="p-2 overflow-y-auto max-h-[300px] custom-scrollbar">
+                                                {(() => {
+                                                    const content = formatContent(block.content);
+                                                    const isJson = content !== block.content;
+
+                                                    if (isJson) {
+                                                        return (
+                                                            <pre className="text-[10px] leading-tight text-slate-700 whitespace-pre break-words font-medium">
+                                                                {content}
+                                                            </pre>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <div className="prose prose-slate prose-sm max-w-none prose-p:my-0 prose-pre:bg-slate-900 prose-pre:text-white prose-table:border-collapse prose-table:border prose-table:border-slate-300 prose-td:border prose-td:border-slate-300 prose-td:p-1 prose-th:border prose-th:border-slate-300 prose-th:p-1 prose-th:bg-slate-100 text-[10px]">
+                                                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                                {block.content}
+                                                            </ReactMarkdown>
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
                                     );
@@ -224,8 +243,12 @@ const StepItem = ({ step, activeAgent, messageIndex, associatedResult, onRetry, 
 };
 
 export const ExecutionTrace = ({ steps, messageIndex, onRetry, onSync }: ExecutionTraceProps) => {
-    // Determine if we should show the block at all (if all steps are hidden 'general', don't show info)
-    const hasVisibleSteps = steps.some(s => !(s.type === 'agent_select' && (s.name === 'general' || s.name === 'general_agent')));
+    // Determine if we should show the block at all
+    const hasVisibleSteps = steps.some(s => {
+        if (s.type === 'doc_analysis') return false;
+        if (s.type === 'agent_select' && (s.name === 'general' || s.name === 'general_agent')) return false;
+        return true;
+    });
 
     // Default open if active
     const [isOpen, setIsOpen] = useState(true);
@@ -253,6 +276,7 @@ export const ExecutionTrace = ({ steps, messageIndex, onRetry, onSync }: Executi
                     {(() => {
                         let lastAgent: string | undefined;
                         return steps.map((step, idx) => {
+                            if (step.type === 'doc_analysis') return null;
                             if (step.type === 'agent_select') {
                                 // If name is "general" etc, maybe ignore?
                                 // But usually we want to track the explicit agent switching

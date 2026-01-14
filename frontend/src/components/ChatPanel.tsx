@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, History, ChevronRight, MessageSquare, Trash2, Github, Send, Square, Check, Copy, AlertCircle, RotateCcw, ChevronDown, ChevronUp, Paperclip, Command, Settings, Workflow, Network, Code2, BarChart3, PenTool, X, ChevronLeft, Loader2, Sparkles } from 'lucide-react';
+import {
+    Send, Paperclip, X, FileText,
+    Sparkles, Settings, ChevronDown, ChevronUp,
+    Command, Square, Copy, Check, RotateCcw,
+    Loader2, Zap, Workflow, Network, Code2,
+    BarChart3, PenTool, Github, Plus, History, Brain,
+    MessageSquare, Trash2, AlertCircle, ChevronRight, ChevronLeft
+} from 'lucide-react';
 import { useSettingsStore } from '../store/settingsStore';
 import { SettingsModal } from './common/SettingsModal';
 import { useChatStore } from '../store/chatStore';
 import { cn, copyToClipboard, parseMixedContent, type ContentBlock } from '../lib/utils';
+import type { Message, DocAnalysisBlock, Step } from '../types';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { ExecutionTrace } from './ExecutionTrace';
 import { ThinkingPanel } from './common/ThinkingPanel';
-import type { Message, Step } from '../types';
 
 const AGENTS = [
     {
@@ -17,7 +25,7 @@ const AGENTS = [
         features: ['Logic flows', 'Step-by-step processes', 'Conditional routing'],
         icon: Workflow,
         color: 'indigo',
-        demoInput: '@flowchart draw a user registration logic.'
+        demoInput: 'A 5-level deep mindmap of Artificial Intelligence covering History, Technical Pillars (ML/DL/NLP), Ethics & Society, and Future Horizons like AGI.'
     },
     {
         id: 'mindmap',
@@ -35,7 +43,7 @@ const AGENTS = [
         features: ['Sequence diagrams', 'Gantt charts', 'Text-to-visual'],
         icon: Code2,
         color: 'emerald',
-        demoInput: '@mermaid sequence diagram for a payment process.'
+        demoInput: '@mermaid a comprehensive sequence diagram for a distributed OAuth2.0 authentication flow involving Client, Auth Server, and Resource Server.'
     },
     {
         id: 'charts',
@@ -44,7 +52,7 @@ const AGENTS = [
         features: ['Data visualization', 'Dashboard metrics', 'Trend analysis'],
         icon: BarChart3,
         color: 'rose',
-        demoInput: '@charts show monthly revenue growth for the last year.'
+        demoInput: '@charts a professional dashboard with a 12-month revenue trend line including area gradients, and a bar chart comparing sales performance across 5 regions.'
     },
     {
         id: 'drawio',
@@ -53,7 +61,7 @@ const AGENTS = [
         features: ['Cloud architecture', 'Network topology', 'Professional drafting'],
         icon: PenTool,
         color: 'blue',
-        demoInput: '@drawio cloud architecture for a web application.'
+        demoInput: '@drawio a professional cloud architecture diagram for a global e-commerce platform using AWS (VPC, Route53, ELB, AutoScaling, RDS, and CloudFront).'
     },
     {
         id: 'infographic',
@@ -62,9 +70,96 @@ const AGENTS = [
         features: ['Data posters', 'Visual storytelling', 'Creative layouts'],
         icon: BarChart3,
         color: 'violet',
-        demoInput: '@infographic timeline of AI history.'
+        demoInput: '@infographic a visually stunning horizontal timeline of the Industrial Revolutions, from Steam Power to Industry 4.0, using professional icons and descriptions.'
     },
 ];
+
+const DocAnalysisCard = ({ block }: { block: DocAnalysisBlock }) => {
+    const [isExpanded, setIsExpanded] = useState(block.status === 'running');
+
+    useEffect(() => {
+        if (block.status === 'done') {
+            const timer = setTimeout(() => setIsExpanded(false), 500); // 0.5s delay for smooth transition
+            return () => clearTimeout(timer);
+        }
+    }, [block.status]);
+
+    // Support both <thinking> and <think> tags
+    const thinkingMatch = block.content.match(/<(thinking|think)>([\s\S]*?)<\/(thinking|think)>/i);
+    const thinking = thinkingMatch ? thinkingMatch[2] : undefined;
+    const displayContent = block.content.replace(/<(thinking|think)>([\s\S]*?)<\/(thinking|think)>/gi, '').trim();
+
+    const getTitle = () => {
+        if (block.index === -1) return "Final Comprehensive Synthesis";
+        return `Detailed Analysis Chunk #${block.index + 1}`;
+    };
+
+    return (
+        <div className="mb-3 overflow-hidden border border-blue-100/50 bg-blue-50/30 rounded-xl transition-all shadow-sm">
+            <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-blue-50/50 transition-colors"
+            >
+                <div className="flex items-center gap-2.5">
+                    <div className={cn(
+                        "p-1.5 rounded-lg",
+                        block.status === 'running' ? "bg-blue-100 text-blue-600 animate-pulse" : "bg-green-100 text-green-600"
+                    )}>
+                        {block.status === 'running' ? <Loader2 className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                    </div>
+                    <div className="flex flex-col items-start text-left">
+                        <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                            {getTitle()}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                            {block.status === 'running' ? 'Processing insights...' : 'Analysis complete'}
+                        </span>
+                    </div>
+                </div>
+                {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+            </button>
+
+            {isExpanded && (
+                <div className="px-4 pb-4 border-t border-blue-50/50 animate-in fade-in slide-in-from-top-2 duration-300">
+                    {thinking && (
+                        <div className="mt-3 p-3 bg-slate-100/50 rounded-lg border border-slate-200/50 italic text-[11px] text-slate-500 leading-relaxed">
+                            <div className="flex items-center gap-1.5 mb-1.5 text-slate-400">
+                                <Brain className="w-3 h-3" />
+                                <span className="font-bold uppercase tracking-widest text-[9px]">Reasoning Process</span>
+                            </div>
+                            {thinking}
+                        </div>
+                    )}
+                    <div className="prose prose-slate prose-sm max-w-none text-xs leading-relaxed mt-3 prose-p:my-1 prose-headings:text-slate-700 prose-headings:font-bold prose-headings:mb-1 prose-headings:mt-3 first:prose-headings:mt-0">
+                        <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                                table: ({ node, ...props }) => (
+                                    <div className="overflow-x-auto my-2 rounded-lg border border-slate-200">
+                                        <table className="w-full text-left text-xs border-collapse" {...props} />
+                                    </div>
+                                ),
+                                thead: ({ node, ...props }) => <thead className="bg-slate-50 text-slate-700 font-semibold" {...props} />,
+                                th: ({ node, ...props }) => <th className="px-3 py-2 border-b border-slate-200 whitespace-nowrap" {...props} />,
+                                td: ({ node, ...props }) => <td className="px-3 py-2 border-b border-slate-100" {...props} />,
+                                code: ({ node, ...props }) => <code onClick={(e) => e.stopPropagation()} className="bg-slate-100 rounded px-1 py-0.5 text-slate-800 break-words" {...props} />,
+                                pre: ({ node, ...props }) => <pre onClick={(e) => e.stopPropagation()} className="bg-slate-800 text-slate-50 p-2 rounded-lg overflow-x-auto text-xs my-2 custom-scrollbar" {...props} />
+                            }}
+                        >
+                            {displayContent}
+                        </ReactMarkdown>
+                    </div>
+                    {block.status === 'running' && (
+                        <div className="flex items-center gap-2 mt-3 text-[10px] text-blue-500 font-medium animate-pulse">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Streaming...
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 export const ChatPanel = () => {
     const {
@@ -96,7 +191,13 @@ export const ChatPanel = () => {
         switchMessageVersion,
         activeMessageId,
         setActiveMessageId,
-        handleSync
+        handleSync,
+        inputFiles,
+        addInputFile,
+        setInputFiles,
+        clearInputFiles,
+        setParsingStatus,
+        parsingStatus,
     } = useChatStore();
 
     const isPagingRef = useRef(false);
@@ -124,6 +225,7 @@ export const ChatPanel = () => {
     const { models, activeModelId, setActiveModelId, hasShownRecommendation, setHasShownRecommendation } = useSettingsStore();
     const activeModel = models.find(m => m.id === activeModelId);
     const [showRecommendation, setShowRecommendation] = useState(false);
+    const [concurrency, setConcurrency] = useState(3);
     const modelSelectorRef = useRef<HTMLDivElement>(null);
 
     // Close model selector when clicking outside
@@ -231,16 +333,26 @@ export const ChatPanel = () => {
     }, []);
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const base64String = reader.result as string;
-            addInputImage(base64String);
-        };
-        reader.readAsDataURL(file);
+        const files = Array.from(e.target.files || []);
+        files.forEach(file => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64 = reader.result as string;
+                if (file.type.startsWith('image/')) {
+                    addInputImage(base64);
+                } else {
+                    addInputFile({ name: file.name, data: base64 });
+                }
+            };
+            reader.readAsDataURL(file);
+        });
         e.target.value = '';
+    };
+
+    const removeFile = (index: number) => {
+        const newFiles = [...inputFiles];
+        newFiles.splice(index, 1);
+        setInputFiles(newFiles);
     };
 
     const removeImage = (index: number) => {
@@ -307,7 +419,7 @@ export const ChatPanel = () => {
     useEffect(() => {
         if (inputRef.current) {
             inputRef.current.style.height = 'auto';
-            inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
+            inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)} px`;
         }
     }, [input]);
 
@@ -379,18 +491,21 @@ export const ChatPanel = () => {
     const triggerSubmit = async (customPrompt?: string, customImages?: string[], parentId?: number | null, isRetry?: boolean, errorMessage?: string) => {
         let promptToUse = customPrompt ?? input;
         const imagesToUse = customImages ?? [...inputImages];
+        const filesToUse = [...inputFiles];
 
         if (errorMessage) {
-            promptToUse += `\n\n[System Note: The previous diagram generation failed to render with the following error. Please fix the syntax: ${errorMessage}]`;
+            promptToUse += `\n\n[System Note: The previous diagram generation failed to render with the following error.Please fix the syntax: ${errorMessage}]`;
         }
 
-        if ((!promptToUse.trim() && imagesToUse.length === 0) || isLoading) return;
+        if ((!promptToUse.trim() && imagesToUse.length === 0 && filesToUse.length === 0) || isLoading) return;
 
         if (!customPrompt) {
             setInput('');
             setShowMentions(false);
             clearInputImages();
+            clearInputFiles();
         }
+        setParsingStatus(null);
         // Content will be derived from messages list
         setStreamingCode(false); // Reset streaming state
 
@@ -413,7 +528,7 @@ export const ChatPanel = () => {
             const tempUserId = -timestamp;
             const tempAssistantId = -(timestamp + 1);
 
-            addMessage({ id: tempUserId, role: 'user', content: promptToUse, images: imagesToUse, parent_id: effectiveParentId ?? null, turn_index: userTurn, created_at: new Date().toISOString() });
+            addMessage({ id: tempUserId, role: 'user', content: promptToUse, images: imagesToUse, files: filesToUse, parent_id: effectiveParentId ?? null, turn_index: userTurn, created_at: new Date().toISOString() });
             setLoading(true);
             // Link to parent locally if possible, or leave as null for backend to link
             addMessage({ id: tempAssistantId, role: 'assistant', content: '', parent_id: effectiveParentId ?? null, turn_index: assistantTurn, steps: [], created_at: new Date().toISOString() });
@@ -426,6 +541,14 @@ export const ChatPanel = () => {
             addMessage({ id: tempAssistantId, role: 'assistant', content: '', parent_id: parentId ?? null, turn_index: assistantTurn, steps: [], created_at: new Date().toISOString() });
             setActiveMessageId(tempAssistantId);
         }
+
+        if (!customPrompt) {
+            setInput('');
+            setShowMentions(false);
+            clearInputImages();
+            clearInputFiles();
+        }
+        setParsingStatus(null);
 
         let thoughtBuffer = "";
         let toolArgsBuffer = "";
@@ -453,9 +576,11 @@ export const ChatPanel = () => {
                     context: {},
                     parent_id: effectiveParentId,
                     is_retry: isRetry,
+                    concurrency: concurrency,
                     model_id: activeModel?.modelId,
                     api_key: activeModel?.apiKey,
-                    base_url: activeModel?.baseUrl
+                    base_url: activeModel?.baseUrl,
+                    files: filesToUse
                 }),
                 signal: abortControllerRef.current.signal
             });
@@ -499,9 +624,15 @@ export const ChatPanel = () => {
                                 continue;
                             }
 
+                            // 2.5 Handle status updates
+                            if (eventName === 'status') {
+                                setParsingStatus(data.content);
+                                continue;
+                            }
+
                             // 2. Filter other events by session ID if present
                             if (eventSessionId && eventSessionId !== useChatStore.getState().sessionId) {
-                                console.warn(`Ignoring event for session ${eventSessionId} (current: ${useChatStore.getState().sessionId})`);
+                                console.warn(`Ignoring event for session ${eventSessionId}(current: ${useChatStore.getState().sessionId})`);
                                 continue;
                             }
 
@@ -567,8 +698,6 @@ export const ChatPanel = () => {
 
                                 case 'agent_selected':
                                     setAgent(data.agent);
-                                    // Always add the agent selection step to ensure visibility
-
                                     addStepToLastMessage({
                                         type: 'agent_select',
                                         name: data.agent,
@@ -596,21 +725,16 @@ export const ChatPanel = () => {
                                         }
                                     };
 
-                                    // 1. Aggressive Dedup & Merging:
-                                    // If last step was an agent selection OR an identical tool call OR a generic precursor tool
+                                    // 1. Aggressive Dedup & Merging
                                     if (lastStepTool) {
                                         const isIdentical = isEqualJson(lastStepTool.content, toolInput);
                                         const isGenericPrecursor = lastStepTool.type === 'tool_start' &&
                                             (lastStepTool.name === 'charts' || lastStepTool.name === 'infographic' ||
                                                 lastStepTool.content === '{}' || !lastStepTool.content || lastStepTool.name === '');
 
-                                        const isReplaceable = lastStepTool.type === 'tool_start';
-
-                                        if (isReplaceable && (isIdentical || isGenericPrecursor)) {
-                                            console.log(`Aggressively replacing previous step with: ${data.tool}`);
-                                            toolArgsBuffer = ""; // Reset buffer
-                                            const replaceLastStep = useChatStore.getState().replaceLastStep;
-                                            replaceLastStep({
+                                        if (lastStepTool.type === 'tool_start' && (isIdentical || isGenericPrecursor)) {
+                                            toolArgsBuffer = "";
+                                            useChatStore.getState().replaceLastStep({
                                                 type: 'tool_start',
                                                 name: data.tool,
                                                 content: toolInput,
@@ -622,13 +746,11 @@ export const ChatPanel = () => {
                                         }
                                     }
 
-                                    // 2. Mark previous step as finished if it was streaming
                                     if (lastStepTool?.isStreaming) {
                                         updateLastStepContent(lastStepTool.content || '', false, 'done', lastStepTool.type, false, eventSessionId);
                                     }
 
-                                    // 3. Add tool start step
-                                    toolArgsBuffer = ""; // Reset buffer for the new tool call
+                                    toolArgsBuffer = "";
                                     addStepToLastMessage({
                                         type: 'tool_start',
                                         name: data.tool,
@@ -653,11 +775,9 @@ export const ChatPanel = () => {
                                         const lastMsgCode = stateCode.allMessages[stateCode.allMessages.length - 1];
                                         const lastStepCode = lastMsgCode?.steps?.[lastMsgCode.steps.length - 1];
 
-                                        // Ensure "Result" step exists before updating it
                                         const isLastStepResult = lastStepCode?.type === 'tool_end' && lastStepCode.name === 'Result';
 
                                         if (!isLastStepResult) {
-                                            // Close tool_start's generating state
                                             if (lastStepCode?.isStreaming) {
                                                 updateLastStepContent(lastStepCode.content || '', false, 'done', lastStepCode.type, false, eventSessionId);
                                             }
@@ -704,28 +824,32 @@ export const ChatPanel = () => {
                                     const lastMsgEnd = stateEnd.allMessages[stateEnd.allMessages.length - 1];
                                     const lastStepEnd = lastMsgEnd?.steps?.[lastMsgEnd.steps.length - 1];
 
-                                    // Mark whatever was last (Tool or result) as done
                                     if (lastStepEnd?.isStreaming) {
                                         let finalContent = data.output || lastStepEnd.content || '';
-                                        // Preservation Fix: If we were streaming a Result (tool_end), 
-                                        // the existing content (accumulated chunks) is definitely what we want.
-                                        // The data.output might be a summarized result or cleaned code from backend that loses thoughts.
                                         if (lastStepEnd.type === 'tool_end' && lastStepEnd.content) {
                                             finalContent = lastStepEnd.content;
                                         }
                                         updateLastStepContent(finalContent, false, 'done', lastStepEnd.type, false, eventSessionId);
                                     }
+                                    break;
 
-                                    // Ensure a Result step exists if output came but no Result step was active
-                                    if (lastStepEnd?.type !== 'tool_end' && data.output) {
-                                        addStepToLastMessage({
-                                            type: 'tool_end',
-                                            name: 'Result',
-                                            content: data.output,
-                                            status: 'done',
-                                            timestamp: Date.now(),
-                                            isStreaming: false
-                                        }, eventSessionId);
+                                case 'doc_analysis_start':
+                                    // No-op or init logic if needed
+                                    break;
+
+                                case 'doc_analysis_chunk':
+                                    if (data.content) {
+                                        // Set to 'done' immediately because backend currently sends full chunks
+                                        useChatStore.getState().updateDocAnalysisBlock(data.index, data.content, 'done', false, eventSessionId);
+                                    }
+                                    break;
+
+                                case 'doc_analysis_end':
+                                    if (data.content) {
+                                        // Final synthesized context can be updated if we want to show it as a special block
+                                        // or just mark all existing blocks as done.
+                                        // For now, let's just mark the synthesis (index -1) as done.
+                                        useChatStore.getState().updateDocAnalysisBlock(-1, data.content, 'done', false, eventSessionId);
                                     }
                                     break;
 
@@ -743,12 +867,13 @@ export const ChatPanel = () => {
             if (error.name === 'AbortError') {
                 console.log('Fetch aborted');
             } else {
-                console.error('Error:', error);
-                updateLastMessage(error.message || 'Error encountered', false, 'error');
+                console.error('Submit error:', error);
+                reportError(error instanceof Error ? error.message : 'Unknown error');
             }
         } finally {
             setLoading(false);
             setStreamingCode(false);
+            setParsingStatus(null);
             abortControllerRef.current = null;
         }
     };
@@ -894,7 +1019,12 @@ export const ChatPanel = () => {
                 onScroll={handleScroll}
                 className="flex-1 overflow-y-auto p-4 space-y-6"
             >
-                {messages.length === 0 && (
+                {isLoading && messages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center min-h-[600px] text-slate-400">
+                        <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" />
+                        <p className="text-sm font-medium">Loading chat history...</p>
+                    </div>
+                ) : messages.length === 0 && (
                     <div className="flex flex-col items-center justify-center min-h-[600px] text-slate-400 space-y-12 py-20 relative overflow-hidden">
                         {/* Mesh Gradient Background Decorative Elements */}
                         <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-400/10 rounded-full blur-[100px] -z-10 animate-pulse" />
@@ -1025,7 +1155,7 @@ export const ChatPanel = () => {
                         (activeMessageId === null && !msg.id && idx === messages.map(m => m.id === undefined && m.role === 'assistant').lastIndexOf(true))
                     );
                     const hasVisibleSteps = msg.steps && msg.steps.some(s => !(s.type === 'agent_select' && (s.name === 'general' || s.name === 'general_agent')));
-                    const hasContent = (msg.content || '').trim() || hasVisibleSteps || (msg.images && msg.images.length > 0) || msg.error;
+                    const hasContent = (msg.content || '').trim() || hasVisibleSteps || (msg.images && msg.images.length > 0) || (msg.files && msg.files.length > 0) || msg.error;
 
                     if (msg.role === 'assistant' && !hasContent && !isGenerating && !versionInfo) {
                         return null;
@@ -1044,6 +1174,13 @@ export const ChatPanel = () => {
                                         : "bg-white text-slate-800 rounded-tl-none border border-slate-100/50 hover:shadow-md hover:border-blue-100/50"
                                 )}
                             >
+                                {msg.docAnalysisBlocks && msg.docAnalysisBlocks.length > 0 && (
+                                    <div className="space-y-3 mb-4">
+                                        {msg.docAnalysisBlocks.map((block) => (
+                                            <DocAnalysisCard key={block.index} block={block} />
+                                        ))}
+                                    </div>
+                                )}
                                 {msg.steps && msg.steps.length > 0 && (
                                     <ExecutionTrace steps={msg.steps} messageIndex={idx} onRetry={() => handleRetry(idx)} onSync={() => handleSync(msg)} />
                                 )}
@@ -1072,15 +1209,26 @@ export const ChatPanel = () => {
                                                 if (!displayContent) return null;
 
                                                 return (
-                                                    <ReactMarkdown
-                                                        key={blockIdx}
-                                                        components={{
-                                                            code: ({ node, ...props }) => <code onClick={(e) => e.stopPropagation()} className="bg-black/10 rounded px-1 py-0.5 whitespace-pre-wrap break-words" {...props} />,
-                                                            pre: ({ node, ...props }) => <pre onClick={(e) => e.stopPropagation()} className="bg-slate-900 text-slate-50 p-3 rounded-lg overflow-x-auto text-xs my-2 max-w-full custom-scrollbar" {...props} />
-                                                        }}
-                                                    >
-                                                        {displayContent}
-                                                    </ReactMarkdown>
+                                                    <div className="prose prose-slate prose-sm max-w-none prose-p:my-1 prose-headings:text-slate-800 prose-headings:font-bold prose-headings:mb-1 prose-headings:mt-3 first:prose-headings:mt-0">
+                                                        <ReactMarkdown
+                                                            key={blockIdx}
+                                                            remarkPlugins={[remarkGfm]}
+                                                            components={{
+                                                                table: ({ node, ...props }) => (
+                                                                    <div className="overflow-x-auto my-2 rounded-lg border border-slate-200">
+                                                                        <table className="w-full text-left text-sm border-collapse bg-white" {...props} />
+                                                                    </div>
+                                                                ),
+                                                                thead: ({ node, ...props }) => <thead className="bg-slate-50 text-slate-700 font-semibold" {...props} />,
+                                                                th: ({ node, ...props }) => <th className="px-4 py-2 border-b border-slate-200 whitespace-nowrap" {...props} />,
+                                                                td: ({ node, ...props }) => <td className="px-4 py-2 border-b border-slate-100" {...props} />,
+                                                                code: ({ node, ...props }) => <code onClick={(e) => e.stopPropagation()} className="bg-slate-100 rounded px-1 py-0.5 text-slate-800 whitespace-pre-wrap break-words border border-slate-200" {...props} />,
+                                                                pre: ({ node, ...props }) => <pre onClick={(e) => e.stopPropagation()} className="bg-slate-900 text-slate-50 p-4 rounded-xl overflow-x-auto text-sm my-3 max-w-full custom-scrollbar shadow-lg" {...props} />
+                                                            }}
+                                                        >
+                                                            {displayContent}
+                                                        </ReactMarkdown>
+                                                    </div>
                                                 );
                                             })}
                                         </div>
@@ -1110,6 +1258,26 @@ export const ChatPanel = () => {
                                     <div className="flex gap-2 flex-wrap mt-2">
                                         {msg.images.map((img, i) => (
                                             <img key={i} src={img} alt="attached" className="max-w-full h-auto max-h-48 rounded-lg border border-white/20" />
+                                        ))}
+                                    </div>
+                                )}
+                                {msg.files && msg.files.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        {msg.files.map((file, i) => (
+                                            <div key={i} className={cn(
+                                                "flex items-center gap-2 px-3 py-2 rounded-xl border transition-all",
+                                                msg.role === 'user'
+                                                    ? "bg-white/10 border-white/20 text-white"
+                                                    : "bg-slate-50 border-slate-100 text-slate-700 hover:bg-slate-100"
+                                            )}>
+                                                <FileText className={cn("w-4 h-4", msg.role === 'user' ? "text-blue-200" : "text-blue-500")} />
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="text-xs font-semibold truncate max-w-[120px]">{file.name}</span>
+                                                    <span className={cn("text-[9px] uppercase tracking-wider font-bold opacity-60", msg.role === 'user' ? "text-blue-100" : "text-slate-400")}>
+                                                        {file.name.split('.').pop()}
+                                                    </span>
+                                                </div>
+                                            </div>
                                         ))}
                                     </div>
                                 )}
@@ -1267,7 +1435,8 @@ export const ChatPanel = () => {
                     <input
                         type="file"
                         ref={fileInputRef}
-                        accept="image/*"
+                        accept="image/*,.pdf,.docx,.xlsx,.xls,.pptx,.txt,.md"
+                        multiple
                         onChange={handleFileSelect}
                         className="hidden"
                     />
@@ -1300,6 +1469,34 @@ export const ChatPanel = () => {
                             </div>
                         )}
 
+                        {/* Parsing Status and File Previews */}
+                        <div className="px-5 pt-3">
+                            {parsingStatus && (
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs animate-pulse mb-2">
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>{parsingStatus}</span>
+                                </div>
+                            )}
+
+                            {inputFiles.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                    {inputFiles.map((file, i) => (
+                                        <div key={i} className="group relative flex items-center gap-2 px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all border border-slate-200">
+                                            <FileText className="w-3.5 h-3.5 text-slate-500" />
+                                            <span className="text-[10px] text-slate-600 max-w-[100px] truncate">{file.name}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeFile(i)}
+                                                className="p-0.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
                         <textarea
                             ref={inputRef}
                             rows={1}
@@ -1319,11 +1516,24 @@ export const ChatPanel = () => {
                                     type="button"
                                     onClick={() => fileInputRef.current?.click()}
                                     className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all"
-                                    title="Upload Image"
+                                    title="Upload Image or Document"
                                     disabled={isLoading}
                                 >
                                     <Paperclip className="w-5 h-5" />
                                 </button>
+
+                                <div className="flex items-center gap-2 px-2 py-1 bg-slate-100/50 border border-slate-200/50 rounded-lg" title="Parallel processing concurrency">
+                                    <Zap className="w-3 h-3 text-amber-500" />
+                                    <input
+                                        type="range"
+                                        min="1"
+                                        max="10"
+                                        value={concurrency}
+                                        onChange={(e) => setConcurrency(parseInt(e.target.value))}
+                                        className="w-12 h-1 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                    />
+                                    <span className="text-[9px] font-bold text-slate-500 min-w-[8px]">{concurrency}</span>
+                                </div>
 
                                 <div className="relative" ref={modelSelectorRef}>
                                     <button
@@ -1450,12 +1660,12 @@ export const ChatPanel = () => {
                             <button
                                 type="button"
                                 onClick={() => isLoading ? stopGeneration() : void triggerSubmit()}
-                                disabled={!isLoading && (!input.trim() && inputImages.length === 0)}
+                                disabled={!isLoading && (!input.trim() && inputImages.length === 0 && inputFiles.length === 0)}
                                 className={cn(
                                     "flex items-center justify-center w-10 h-10 rounded-full transition-all",
                                     isLoading
                                         ? "bg-red-500 text-white hover:bg-red-600 active:scale-95 shadow-md shadow-red-500/20"
-                                        : (!input.trim() && inputImages.length === 0)
+                                        : (!input.trim() && inputImages.length === 0 && inputFiles.length === 0)
                                             ? "bg-slate-200 text-slate-400 pointer-events-none"
                                             : "bg-blue-600 text-white hover:bg-blue-700 active:scale-95 shadow-md shadow-blue-500/20"
                                 )}

@@ -96,15 +96,32 @@ def get_configured_llm(state: "AgentState", temperature: float = 0.3):
     return get_llm(temperature=temperature)
 
 
+def get_time_instructions() -> str:
+    """
+    Returns the current time context.
+    """
+    from datetime import datetime, timezone
+    import calendar
+    
+    now = datetime.now(timezone.utc)
+    day_name = calendar.day_name[now.weekday()]
+    formatted_time = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+    
+    return f"\n\n### CURRENT TIME CONTEXT\n- Current Date and Time: {formatted_time}\n- Day of Week: {day_name}"
+
 def get_thinking_instructions() -> str:
     """
-    Returns system prompt instructions based on thinking verbosity setting.
+    Returns system prompt instructions based on thinking verbosity setting,
+    plus the current time context.
     """
     verbosity = settings.THINKING_VERBOSITY.lower()
     
-    if verbosity == "concise":
-        return "\n\n### THINKING PROCESS\n- Please be extremely concise in your internal thinking (<think> tags).\n- Focus ONLY on critical reasoning steps.\n- Avoid restating the obvious or verbose planning."
-    elif verbosity == "verbose":
-        return "\n\n### THINKING PROCESS\n- Please explore all possibilities in your internal thinking.\n- Verify assumptions and plan in detail."
+    time_context = get_time_instructions()
+    thinking_part = ""
     
-    return "" # Normal - rely on model default
+    if verbosity == "concise":
+        thinking_part = "\n\n### THINKING PROCESS\n- Please be extremely concise in your internal thinking (<think> tags).\n- Focus ONLY on critical reasoning steps.\n- Avoid restating the obvious or verbose planning."
+    elif verbosity == "verbose":
+        thinking_part = "\n\n### THINKING PROCESS\n- Please explore all possibilities in your internal thinking.\n- Verify assumptions and plan in detail."
+    
+    return thinking_part + time_context

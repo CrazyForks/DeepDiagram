@@ -21,5 +21,10 @@ async def general_agent_node(state: AgentState):
     """)
     
     llm = get_configured_llm(state)
+    
+    # Add time context to system prompt
+    from app.core.llm import get_time_instructions
+    system_prompt.content += get_time_instructions()
+    
     response = await llm.ainvoke([system_prompt] + messages)
     return {"messages": [response]}

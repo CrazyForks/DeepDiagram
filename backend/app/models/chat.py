@@ -1,4 +1,4 @@
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from datetime import datetime, timezone
 from sqlmodel import Field, SQLModel, Relationship, Column, JSON
 from pydantic import field_serializer
@@ -23,11 +23,13 @@ class ChatSession(SQLModel, table=True):
 
 class ChatMessage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    session_id: Optional[int] = Field(default=None, foreign_key="chatsession.id")
+    session_id: Optional[int] = Field(default=None, foreign_key="chatsession.id", index=True)
     parent_id: Optional[int] = Field(default=None, foreign_key="chatmessage.id")
     role: str # "user" or "assistant"
     content: str
     images: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    files: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
+    file_context: Optional[str] = Field(default=None)
     steps: Optional[List[Any]] = Field(default=None, sa_column=Column(JSON))
     agent: Optional[str] = Field(default=None)
     turn_index: int = Field(default=0)

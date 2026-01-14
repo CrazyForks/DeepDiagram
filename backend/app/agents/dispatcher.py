@@ -145,6 +145,10 @@ def router_node(state: AgentState):
     Respond in the same language as the user's input (e.g., if the user asks in Chinese, respond in Chinese).
     """
     
+    # Add time context
+    from app.core.llm import get_time_instructions
+    routing_instructions += get_time_instructions()
+    
     # We pass the instruction as a SystemMessage and the ACTUAL last message as is.
     # This ensures that if the last message has image_url, the LLM will see it as an image, NOT as long text tokens.
     msgs_to_invoke = [
