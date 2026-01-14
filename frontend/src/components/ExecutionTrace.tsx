@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { cn, copyToClipboard, parseMixedContent, type ContentBlock } from '../lib/utils';
 import { BrainCircuit, Terminal, CheckCircle, ChevronDown, ChevronRight, Activity, Copy, Play, Check, RotateCcw } from 'lucide-react';
 import { ThinkingPanel } from './common/ThinkingPanel';
@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm';
 
 interface ExecutionTraceProps {
     steps: Step[];
+    thoughts?: { content: string; isThinking?: boolean }[];
     messageIndex: number;
     onRetry?: (index: number) => void;
     onSync?: () => void;
@@ -47,8 +48,8 @@ const StepItem = ({ step, activeAgent, messageIndex, associatedResult, onRetry, 
         }
     }, [step.content, step.isStreaming]);
 
-    // Hide "general" agent selection
-    if (step.type === 'agent_select' && (step.name === 'general' || step.name === 'general_agent')) {
+    // Hide "general" agent selection and agent_end markers
+    if (step.type === 'agent_end' || (step.type === 'agent_select' && (step.name === 'general' || step.name === 'general_agent'))) {
         return null;
     }
 
@@ -242,13 +243,13 @@ const StepItem = ({ step, activeAgent, messageIndex, associatedResult, onRetry, 
     );
 };
 
-export const ExecutionTrace = ({ steps, messageIndex, onRetry, onSync }: ExecutionTraceProps) => {
+export const ExecutionTrace = ({ steps, thoughts = [], messageIndex, onRetry, onSync }: ExecutionTraceProps) => {
     // Determine if we should show the block at all
     const hasVisibleSteps = steps.some(s => {
         if (s.type === 'doc_analysis') return false;
         if (s.type === 'agent_select' && (s.name === 'general' || s.name === 'general_agent')) return false;
         return true;
-    });
+    }) || thoughts.length > 0;
 
     // Default open if active
     const [isOpen, setIsOpen] = useState(true);
@@ -265,7 +266,7 @@ export const ExecutionTrace = ({ steps, messageIndex, onRetry, onSync }: Executi
                     <Activity className="w-3.5 h-3.5" />
                     <span>Process Trace</span>
                     <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full text-[10px]">
-                        {steps.length}
+                        {steps.length + thoughts.length}
                     </span>
                 </div>
                 {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -273,28 +274,81 @@ export const ExecutionTrace = ({ steps, messageIndex, onRetry, onSync }: Executi
 
             {isOpen && (
                 <div className="p-2 space-y-2 bg-white">
+                    {/* 1. Pre-Router Thoughts (Thought 0) */}
+                    {thoughts.length > 0 && (
+                        <div className="rounded border border-purple-100 overflow-hidden">
+                            <ThinkingPanel thought={thoughts[0].content} isThinking={thoughts[0].isThinking} />
+                        </div>
+                    )}
+
                     {(() => {
                         let lastAgent: string | undefined;
-                        return steps.map((step, idx) => {
-                            if (step.type === 'doc_analysis') return null;
+                        let lastToolEndIndex = -1;
+                        const renderedSteps = [];
+
+                        // Find the last tool_end index
+                        for (let idx = steps.length - 1; idx >= 0; idx--) {
+                            if (steps[idx].type === 'tool_end') {
+                                lastToolEndIndex = idx;
+                                break;
+                            }
+                        }
+
+                        for (let idx = 0; idx < steps.length; idx++) {
+                            const step = steps[idx];
+                            if (step.type === 'doc_analysis') continue;
+
+                            // Render the step
+                            let associatedResult = undefined;
                             if (step.type === 'agent_select') {
-                                // If name is "general" etc, maybe ignore?
-                                // But usually we want to track the explicit agent switching
                                 lastAgent = step.name;
-                                // Look ahead for associated tool_end (result)
-                                let associatedResult = undefined;
                                 for (let i = idx + 1; i < steps.length; i++) {
-                                    if (steps[i].type === 'agent_select') break; // Search only until next agent
+                                    if (steps[i].type === 'agent_select') break;
                                     if (steps[i].type === 'tool_end' && steps[i].content) {
                                         associatedResult = { content: steps[i].content!, index: i };
                                         break;
                                     }
                                 }
-                                return <StepItem key={idx} step={step} activeAgent={lastAgent} messageIndex={messageIndex} associatedResult={associatedResult} onRetry={onRetry} onSync={onSync} />;
+                                renderedSteps.push(
+                                    <StepItem
+                                        key={`step-${idx}`}
+                                        step={step}
+                                        activeAgent={lastAgent}
+                                        messageIndex={messageIndex}
+                                        associatedResult={associatedResult}
+                                        onRetry={onRetry}
+                                        onSync={onSync}
+                                    />
+                                );
+                            } else {
+                                renderedSteps.push(
+                                    <React.Fragment key={`step-${idx}`}>
+                                        <StepItem
+                                            step={step}
+                                            activeAgent={lastAgent}
+                                            messageIndex={messageIndex}
+                                            onRetry={onRetry}
+                                            onSync={onSync}
+                                        />
+                                        {/* 2. Post-Tool Execution Thoughts (Thought 1) - Render after last tool_end */}
+                                        {idx === lastToolEndIndex && thoughts.length > 1 && (
+                                            <div key="thought-1" className="rounded border border-purple-100 overflow-hidden">
+                                                <ThinkingPanel thought={thoughts[1].content} isThinking={thoughts[1].isThinking} />
+                                            </div>
+                                        )}
+                                    </React.Fragment>
+                                );
                             }
-                            return <StepItem key={idx} step={step} activeAgent={lastAgent} messageIndex={messageIndex} onRetry={onRetry} onSync={onSync} />;
-                        });
+                        }
+                        return renderedSteps;
                     })()}
+
+                    {/* 3. Catch-all for extra thoughts (Thought 2+) - Rendered OUTSIDE agent block (no indentation) */}
+                    {thoughts.slice(2).map((t, i) => (
+                        <div key={`thought-extra-${i}`} className="rounded border border-purple-100 overflow-hidden">
+                            <ThinkingPanel thought={t.content} isThinking={t.isThinking} />
+                        </div>
+                    ))}
                 </div>
             )}
         </div>

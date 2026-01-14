@@ -1,21 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-    Send, Paperclip, X, FileText,
-    Sparkles, Settings, ChevronDown, ChevronUp,
-    Command, Square, Copy, Check, RotateCcw,
-    Loader2, Zap, Workflow, Network, Code2,
-    BarChart3, PenTool, Github, Plus, History, Brain,
-    MessageSquare, Trash2, AlertCircle, ChevronRight, ChevronLeft
+    Sparkles, ChevronDown, ChevronUp, Loader2, Workflow, Network,
+    Code2, BarChart3, PenTool, Brain, Send, Paperclip, X, FileText,
+    Settings, Command, Square, Copy, Check, RotateCcw, Zap, Github,
+    Plus, History as HistoryIcon, MessageSquare, Trash2, AlertCircle,
+    ChevronRight, ChevronLeft
 } from 'lucide-react';
 import { useSettingsStore } from '../store/settingsStore';
 import { SettingsModal } from './common/SettingsModal';
 import { useChatStore } from '../store/chatStore';
-import { cn, copyToClipboard, parseMixedContent, type ContentBlock } from '../lib/utils';
-import type { Message, DocAnalysisBlock, Step } from '../types';
+import type { Step, Message, DocAnalysisBlock } from '../types';
+import { cn, copyToClipboard, parseMixedContent } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ExecutionTrace } from './ExecutionTrace';
-import { ThinkingPanel } from './common/ThinkingPanel';
 
 const AGENTS = [
     {
@@ -25,7 +23,7 @@ const AGENTS = [
         features: ['Logic flows', 'Step-by-step processes', 'Conditional routing'],
         icon: Workflow,
         color: 'indigo',
-        demoInput: 'A 5-level deep mindmap of Artificial Intelligence covering History, Technical Pillars (ML/DL/NLP), Ethics & Society, and Future Horizons like AGI.'
+        demoInput: '@flowchart A 5-level deep mindmap of Artificial Intelligence covering History, Technical Pillars (ML/DL/NLP), Ethics & Society, and Future Horizons like AGI.'
     },
     {
         id: 'mindmap',
@@ -85,13 +83,27 @@ const DocAnalysisCard = ({ block }: { block: DocAnalysisBlock }) => {
     }, [block.status]);
 
     // Support both <thinking> and <think> tags
-    const thinkingMatch = block.content.match(/<(thinking|think)>([\s\S]*?)<\/(thinking|think)>/i);
-    const thinking = thinkingMatch ? thinkingMatch[2] : undefined;
-    const displayContent = block.content.replace(/<(thinking|think)>([\s\S]*?)<\/(thinking|think)>/gi, '').trim();
+    // 1. Try to match complete tags first
+    const completeThinkingMatch = block.content.match(/<(thinking|think)>([\s\S]*?)<\/(thinking|think)>/i);
+
+    let thinking: string | undefined;
+    let displayContent = block.content;
+
+    if (completeThinkingMatch) {
+        thinking = completeThinkingMatch[2];
+        displayContent = block.content.replace(/<(thinking|think)>([\s\S]*?)<\/(thinking|think)>/gi, '').trim();
+    } else {
+        // 2. Check for incomplete/streaming tags at the start
+        const startMatch = block.content.match(/^<(thinking|think)>([\s\S]*)/i);
+        if (startMatch) {
+            thinking = startMatch[2];
+            displayContent = ''; // Hide everything else as it is part of thinking
+        }
+    }
 
     const getTitle = () => {
         if (block.index === -1) return "Final Comprehensive Synthesis";
-        return `Detailed Analysis Chunk #${block.index + 1}`;
+        return `Detailed Analysis Chunk #${block.index + 1} `;
     };
 
     return (
@@ -120,7 +132,7 @@ const DocAnalysisCard = ({ block }: { block: DocAnalysisBlock }) => {
             </button>
 
             {isExpanded && (
-                <div className="px-4 pb-4 border-t border-blue-50/50 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="px-4 pb-4 border-t border-blue-50/50 animate-in fade-in slide-in-from-top-2 duration-300 max-h-64 overflow-y-auto custom-scrollbar">
                     {thinking && (
                         <div className="mt-3 p-3 bg-slate-100/50 rounded-lg border border-slate-200/50 italic text-[11px] text-slate-500 leading-relaxed">
                             <div className="flex items-center gap-1.5 mb-1.5 text-slate-400">
@@ -142,8 +154,43 @@ const DocAnalysisCard = ({ block }: { block: DocAnalysisBlock }) => {
                                 thead: ({ node, ...props }) => <thead className="bg-slate-50 text-slate-700 font-semibold" {...props} />,
                                 th: ({ node, ...props }) => <th className="px-3 py-2 border-b border-slate-200 whitespace-nowrap" {...props} />,
                                 td: ({ node, ...props }) => <td className="px-3 py-2 border-b border-slate-100" {...props} />,
-                                code: ({ node, ...props }) => <code onClick={(e) => e.stopPropagation()} className="bg-slate-100 rounded px-1 py-0.5 text-slate-800 break-words" {...props} />,
-                                pre: ({ node, ...props }) => <pre onClick={(e) => e.stopPropagation()} className="bg-slate-800 text-slate-50 p-2 rounded-lg overflow-x-auto text-xs my-2 custom-scrollbar" {...props} />
+                                code: ({ node, className, children, ...props }) => {
+                                    const match = /language-(\w+)/.exec(className || '');
+                                    const isInline = !match && !String(children).includes('\n');
+
+                                    if (isInline) {
+                                        return (
+                                            <code
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="bg-slate-100 rounded px-1.5 py-0.5 text-slate-800 break-words font-mono text-[11px] border border-slate-200"
+                                                {...props}
+                                            >
+                                                {children}
+                                            </code>
+                                        );
+                                    }
+
+                                    return (
+                                        <code
+                                            onClick={(e) => e.stopPropagation()}
+                                            className={cn("font-mono text-xs", className)}
+                                            {...props}
+                                        >
+                                            {children}
+                                        </code>
+                                    );
+                                },
+                                pre: ({ node, children, ...props }) => (
+                                    <div className="relative group my-3">
+                                        <pre
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="bg-[#1e1e1e] text-slate-50 p-3 rounded-lg overflow-x-auto text-xs custom-scrollbar border border-slate-700/50 shadow-sm"
+                                            {...props}
+                                        >
+                                            {children}
+                                        </pre>
+                                    </div>
+                                )
                             }}
                         >
                             {displayContent}
@@ -838,9 +885,11 @@ export const ChatPanel = () => {
                                     break;
 
                                 case 'doc_analysis_chunk':
-                                    if (data.content) {
-                                        // Set to 'done' immediately because backend currently sends full chunks
-                                        useChatStore.getState().updateDocAnalysisBlock(data.index, data.content, 'done', false, eventSessionId);
+                                    if (data.content !== undefined) {
+                                        // Use status from backend event, default to 'running'
+                                        const status = data.status || 'running';
+                                        // Change false to true to APPEND streaming content
+                                        useChatStore.getState().updateDocAnalysisBlock(data.index, data.content, status, true, eventSessionId);
                                     }
                                     break;
 
@@ -935,7 +984,7 @@ export const ChatPanel = () => {
                                     : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                             )}
                         >
-                            <History className="w-3.5 h-3.5" />
+                            <HistoryIcon className="w-3.5 h-3.5" />
                             <span>History</span>
                             <ChevronDown className={cn("w-3 h-3 transition-transform duration-200", showHistory && "rotate-180")} />
                         </button>
@@ -944,7 +993,7 @@ export const ChatPanel = () => {
                             <div className="absolute right-0 mt-2 w-80 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200/50 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Recent Chats</span>
-                                    <History className="w-3 h-3 text-slate-300" />
+                                    <HistoryIcon className="w-3 h-3 text-slate-300" />
                                 </div>
                                 <div className="max-h-[400px] overflow-y-auto p-1 custom-scrollbar">
                                     {sessions.length === 0 ? (
@@ -1181,37 +1230,45 @@ export const ChatPanel = () => {
                                         ))}
                                     </div>
                                 )}
-                                {msg.steps && msg.steps.length > 0 && (
-                                    <ExecutionTrace steps={msg.steps} messageIndex={idx} onRetry={() => handleRetry(idx)} onSync={() => handleSync(msg)} />
-                                )}
                                 {(() => {
                                     const blocks = parseMixedContent(msg.content);
+                                    const thoughtBlocks = blocks.filter(b => b.type === 'thought').map(b => ({ content: b.content, isThinking: b.isThinking }));
+                                    const otherBlocks = blocks.filter(b => b.type !== 'thought');
 
                                     return (
                                         <div className="flex flex-col gap-2">
-                                            {blocks.map((block: ContentBlock, blockIdx: number) => {
-                                                if (block.type === 'thought') {
-                                                    return (
-                                                        <div key={blockIdx} className="rounded-lg overflow-hidden border border-purple-100 shadow-sm">
-                                                            <ThinkingPanel thought={block.content} isThinking={block.isThinking} />
-                                                        </div>
-                                                    );
-                                                }
+                                            {/* Unified Trace: Interleaves Thinking and Steps */}
+                                            {((msg.steps && msg.steps.length > 0) || thoughtBlocks.length > 0) && (
+                                                <ExecutionTrace
+                                                    steps={msg.steps || []}
+                                                    thoughts={thoughtBlocks}
+                                                    messageIndex={idx}
+                                                    onRetry={() => handleRetry(idx)}
+                                                    onSync={() => handleSync(msg)}
+                                                />
+                                            )}
 
+                                            {/* Final Response Content */}
+                                            {otherBlocks.map((block, blockIdx) => {
                                                 // Clean text content for display
-                                                const displayContent = block.content
+                                                let displayContent = block.content
                                                     .split('### Execution Trace:')[0]
                                                     .split('\n')
                                                     .filter((line: string) => !line.includes('[Error'))
                                                     .join('\n')
                                                     .trim();
 
+                                                // Filter out standalone router keywords that might leak into the stream
+                                                const routerKeywords = ['mindmap', 'flow', 'mermaid', 'charts', 'drawio', 'general', 'infographic', 'flowchart'];
+                                                if (msg.steps && msg.steps.length > 0 && routerKeywords.includes(displayContent.toLowerCase())) {
+                                                    return null;
+                                                }
+
                                                 if (!displayContent) return null;
 
                                                 return (
-                                                    <div className="prose prose-slate prose-sm max-w-none prose-p:my-1 prose-headings:text-slate-800 prose-headings:font-bold prose-headings:mb-1 prose-headings:mt-3 first:prose-headings:mt-0">
+                                                    <div key={blockIdx} className="prose prose-slate prose-sm max-w-none prose-p:my-1 prose-headings:text-slate-800 prose-headings:font-bold prose-headings:mb-1 prose-headings:mt-3 first:prose-headings:mt-0">
                                                         <ReactMarkdown
-                                                            key={blockIdx}
                                                             remarkPlugins={[remarkGfm]}
                                                             components={{
                                                                 table: ({ node, ...props }) => (
@@ -1222,8 +1279,43 @@ export const ChatPanel = () => {
                                                                 thead: ({ node, ...props }) => <thead className="bg-slate-50 text-slate-700 font-semibold" {...props} />,
                                                                 th: ({ node, ...props }) => <th className="px-4 py-2 border-b border-slate-200 whitespace-nowrap" {...props} />,
                                                                 td: ({ node, ...props }) => <td className="px-4 py-2 border-b border-slate-100" {...props} />,
-                                                                code: ({ node, ...props }) => <code onClick={(e) => e.stopPropagation()} className="bg-slate-100 rounded px-1 py-0.5 text-slate-800 whitespace-pre-wrap break-words border border-slate-200" {...props} />,
-                                                                pre: ({ node, ...props }) => <pre onClick={(e) => e.stopPropagation()} className="bg-slate-900 text-slate-50 p-4 rounded-xl overflow-x-auto text-sm my-3 max-w-full custom-scrollbar shadow-lg" {...props} />
+                                                                code: ({ node, className, children, ...props }) => {
+                                                                    const match = /language-(\w+)/.exec(className || '');
+                                                                    const isInline = !match && !String(children).includes('\n');
+
+                                                                    if (isInline) {
+                                                                        return (
+                                                                            <code
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                className="bg-slate-100 rounded px-1.5 py-0.5 text-slate-800 break-words font-mono text-[11px] border border-slate-200"
+                                                                                {...props}
+                                                                            >
+                                                                                {children}
+                                                                            </code>
+                                                                        );
+                                                                    }
+
+                                                                    return (
+                                                                        <code
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            className={cn("font-mono text-xs", className)}
+                                                                            {...props}
+                                                                        >
+                                                                            {children}
+                                                                        </code>
+                                                                    );
+                                                                },
+                                                                pre: ({ node, children, ...props }) => (
+                                                                    <div className="relative group my-3">
+                                                                        <pre
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            className="bg-[#1e1e1e] text-slate-50 p-3 rounded-lg overflow-x-auto text-xs custom-scrollbar border border-slate-700/50 shadow-sm"
+                                                                            {...props}
+                                                                        >
+                                                                            {children}
+                                                                        </pre>
+                                                                    </div>
+                                                                )
                                                             }}
                                                         >
                                                             {displayContent}
@@ -1345,31 +1437,33 @@ export const ChatPanel = () => {
                                     </span>
                                 )}
                             </div>
-                        </div>
+                        </div >
                     );
                 })}
                 <div ref={messagesEndRef} />
-            </div>
+            </div >
 
             {/* Input Area */}
-            <div className="p-4 border-t border-slate-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative z-20">
+            < div className="p-4 border-t border-slate-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative z-20" >
                 {/* Image Previews */}
-                {inputImages.length > 0 && (
-                    <div className="flex gap-2 mb-2 overflow-x-auto py-2">
-                        {inputImages.map((img, idx) => (
-                            <div key={idx} className="relative group/image flex-shrink-0">
-                                <img src={img} alt="preview" className="h-16 w-16 object-cover rounded-lg border border-slate-200" />
-                                <button
-                                    type="button"
-                                    onClick={() => removeImage(idx)}
-                                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-sm opacity-0 group-hover/image:opacity-100 transition-opacity"
-                                >
-                                    <X className="w-3 h-3" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                {
+                    inputImages.length > 0 && (
+                        <div className="flex gap-2 mb-2 overflow-x-auto py-2">
+                            {inputImages.map((img, idx) => (
+                                <div key={idx} className="relative group/image flex-shrink-0">
+                                    <img src={img} alt="preview" className="h-16 w-16 object-cover rounded-lg border border-slate-200" />
+                                    <button
+                                        type="button"
+                                        onClick={() => removeImage(idx)}
+                                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-sm opacity-0 group-hover/image:opacity-100 transition-opacity"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )
+                }
 
                 {/* Agent Shortcuit Toolbar */}
                 <div className="flex flex-wrap gap-2 mb-4 px-1">
@@ -1675,8 +1769,8 @@ export const ChatPanel = () => {
                         </div>
                     </div>
                 </form>
-            </div>
+            </div >
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-        </div>
+        </div >
     );
 };
