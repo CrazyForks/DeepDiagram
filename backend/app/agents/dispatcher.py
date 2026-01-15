@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.core.llm import get_llm, get_configured_llm
 import re
 
-def router_node(state: AgentState):
+async def router_node(state: AgentState):
     """
     Analyzes the user's input and determines the appropriate agent.
     Supports explicit routing via @agent syntax.
@@ -157,7 +157,7 @@ def router_node(state: AgentState):
     ]
     
     llm = get_configured_llm(state)
-    response = llm.invoke(msgs_to_invoke)
+    response = await llm.ainvoke(msgs_to_invoke)
     intent = response.content.strip().lower()
     
     print(f"DEBUG ROUTER | Last Agent: {last_active_agent} | Raw Intent: {intent}")

@@ -93,34 +93,61 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
             # Use dedicated events for document analysis to separate from tool flow
             yield f"event: doc_analysis_start\ndata: {json.dumps({'session_id': session_id})}\n\n"
             
+            analysis_buffers = {}
+            
             async for result in extraction_service.extract_and_summarize(
                 all_parsed_text, 
                 concurrency=request.concurrency,
                 status_callback=None
             ):
                 timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
-                if result.get("is_final"):
-                    doc_context = result["content"]
-                    # Persist final synthesis
-                    accumulated_steps.append({
-                        "type": "doc_analysis",
-                        "name": "doc_analysis_synthesis",
-                        "content": json.dumps({"index": -1, "content": doc_context}),
-                        "status": "done",
-                        "timestamp": timestamp
-                    })
-                else:
-                    chunk_idx = result["index"]
-                    # Persist chunk
-                    accumulated_steps.append({
-                        "type": "doc_analysis",
-                        "name": f"doc_analysis_chunk_{chunk_idx}",
-                        "content": json.dumps({"index": chunk_idx, "content": result['content']}),
-                        "status": "done",
-                        "timestamp": timestamp
-                    })
+                chunk_idx = result["index"]
+                content = result.get("content", "")
+                status = result.get("status", "running")
+                
+                # Initialize buffer if needed
+                if chunk_idx not in analysis_buffers:
+                    analysis_buffers[chunk_idx] = ""
+                
+                if status == "running":
+                    analysis_buffers[chunk_idx] += content
+                    yield f"event: doc_analysis_chunk\ndata: {json.dumps({'content': content, 'index': chunk_idx, 'status': 'running', 'session_id': session_id})}\n\n"
                     
-                    yield f"event: doc_analysis_chunk\ndata: {json.dumps({'content': result['content'], 'index': chunk_idx, 'session_id': session_id})}\n\n"
+                elif status in ["done", "error"]:
+                    # Final content for this block
+                    final_text = analysis_buffers[chunk_idx]
+                    
+                    if chunk_idx == -1:
+                        doc_context = final_text
+                        step_name = "doc_analysis_synthesis"
+                    else:
+                        step_name = f"doc_analysis_chunk_{chunk_idx}"
+                    
+                    # Deduplication: Check if we already have a step for this index
+                    # This prevents the "duplicate Final Synthesis" issue if the stream yields multiple done events
+                    existing_step = False
+                    for step in accumulated_steps:
+                        if step["type"] == "doc_analysis":
+                            try:
+                                content_json = json.loads(step["content"])
+                                if content_json.get("index") == chunk_idx:
+                                    existing_step = True
+                                    break
+                            except:
+                                pass
+                    
+                    if not existing_step:
+                        accumulated_steps.append({
+                            "type": "doc_analysis",
+                            "name": step_name,
+                            "content": json.dumps({"index": chunk_idx, "content": final_text}),
+                            "status": "done",
+                            "start_time": datetime.utcnow().timestamp(),
+                            "end_time": datetime.utcnow().timestamp()
+                        })
+                    
+                    # Send final empty chunk to signal done state to frontend
+                    yield f"event: doc_analysis_chunk\ndata: {json.dumps({'content': '', 'index': chunk_idx, 'status': 'done', 'session_id': session_id})}\n\n"
             
             yield f"event: doc_analysis_end\ndata: {json.dumps({'content': doc_context, 'session_id': session_id})}\n\n"
 
@@ -270,7 +297,18 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
                                 "status": "done",
                                 "timestamp": int(datetime.utcnow().timestamp() * 1000)
                             })
-                    continue # Skip all other events from "router" node
+                    # Allow router thoughts to stream through
+                    # continue # Skip all other events from "router" node
+
+                # Detect Agent End
+                if node_name.endswith("_agent") and event_type == "on_chain_end":
+                     accumulated_steps.append({
+                        "type": "agent_end",
+                        "name": node_name,
+                        "status": "done",
+                        "timestamp": int(datetime.utcnow().timestamp() * 1000)
+                     })
+                     yield f"event: agent_end\ndata: {json.dumps({'agent': node_name, 'session_id': session_id})}\n\n"
 
                 if event_type == "on_chat_model_stream":
                     chunk = data.get("chunk")

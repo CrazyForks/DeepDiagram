@@ -1,7 +1,7 @@
 export type AgentType = 'mindmap' | 'flowchart' | 'charts' | 'drawio' | 'mermaid' | 'infographic' | 'general';
 
 export interface Step {
-    type: 'agent_select' | 'tool_start' | 'tool_end' | 'doc_analysis';
+    type: 'agent_select' | 'tool_start' | 'tool_end' | 'doc_analysis' | 'agent_end';
     name?: string; // e.g. "mindmap_agent", "create_chart"
     content?: string; // Input or Output
     status: 'running' | 'done' | 'error';
@@ -15,6 +15,16 @@ export interface DocAnalysisBlock {
     content: string;
     thinking?: string;
     status: 'running' | 'done';
+}
+
+export interface FileData {
+    name: string;
+    data: string;
+}
+
+export interface VersionInfo {
+    current: number;
+    total: number;
 }
 
 export interface Message {

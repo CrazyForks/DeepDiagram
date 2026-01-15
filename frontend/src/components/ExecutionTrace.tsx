@@ -265,9 +265,6 @@ export const ExecutionTrace = ({ steps, thoughts = [], messageIndex, onRetry, on
                 <div className="flex items-center gap-2">
                     <Activity className="w-3.5 h-3.5" />
                     <span>Process Trace</span>
-                    <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full text-[10px]">
-                        {steps.length + thoughts.length}
-                    </span>
                 </div>
                 {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
             </button>

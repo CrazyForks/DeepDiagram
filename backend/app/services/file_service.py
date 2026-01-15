@@ -74,7 +74,7 @@ class LLMExtractionService:
         concurrency: int = 3, 
         status_callback: Callable[[str], Any] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Chunks text and processes them in parallel using LLM, yielding results as they complete."""
+        """Chunks text and processes them in parallel using LLM, streaming partial results via a queue."""
         if not text:
             return
 
@@ -85,53 +85,84 @@ class LLMExtractionService:
             res = status_callback(f"Total chunks to process: {total_chunks}")
             if asyncio.iscoroutine(res): await res
 
+        queue = asyncio.Queue()
         semaphore = asyncio.Semaphore(concurrency)
-
-        async def process_chunk(index: int, chunk: str) -> Dict[str, Any]:
+        
+        # Track completed chunks to know when to stop
+        # We'll put a special sentinel per chunk or just track count in the consumer?
+        # Better: run producers in background, consumer yields from queue.
+        
+        async def process_chunk(index: int, chunk: str):
             async with semaphore:
-                if status_callback:
-                    res = status_callback(f"Summarizing chunk {index + 1}/{total_chunks}...")
-                    if asyncio.iscoroutine(res): await res
-                
-                system_prompt = (
-                    "You are a highly skilled Data Extraction and Analysis Specialist. Your goal is to convert the provided text into a high-density information summary that will be used for diagram generation (flowcharts, mind maps, timelines, etc.).\n\n"
-                    "Please extract the following elements with high precision:\n"
-                    "1. **Temporal Data**: All dates, times, durations, and chronological sequences.\n"
-                    "2. **Key Entities**: Names of people, organizations, systems, and specialized terms.\n"
-                    "3. **Core Relationships**: How entities interact, causal links, and hierarchical dependencies.\n"
-                    "4. **Quantitative Specifications**: Measurements, percentages, financial figures, and technical specs.\n"
-                    "5. **Procedural Logic**: Step-by-step processes, decision points, and conditional flows.\n\n"
-                    "Format your output as a structured Markdown summary that is clear, logical, and optimized for downstream AI reasoning."
-                ) + get_time_instructions()
-                messages = [
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=f"Text chunk {index + 1}/{total_chunks}:\n\n{chunk}")
-                ]
-                
                 try:
-                    response = await self.llm.ainvoke(messages)
-                    return {"index": index, "content": response.content}
+                    if status_callback:
+                        res = status_callback(f"Starting chunk {index + 1}/{total_chunks}...")
+                        if asyncio.iscoroutine(res): await res
+                    
+                    system_prompt = (
+                        "You are a highly skilled Data Extraction and Analysis Specialist. Your goal is to convert the provided text into a high-density information summary that will be used for diagram generation (flowcharts, mind maps, timelines, etc.).\n\n"
+                        "Please extract the following elements with high precision:\n"
+                        "1. **Temporal Data**: All dates, times, durations, and chronological sequences.\n"
+                        "2. **Key Entities**: Names of people, organizations, systems, and specialized terms.\n"
+                        "3. **Core Relationships**: How entities interact, causal links, and hierarchical dependencies.\n"
+                        "4. **Quantitative Specifications**: Measurements, percentages, financial figures, and technical specs.\n"
+                        "5. **Procedural Logic**: Step-by-step processes, decision points, and conditional flows.\n\n"
+                        "Format your output as a structured Markdown summary that is clear, logical, and optimized for downstream AI reasoning."
+                    ) + get_time_instructions()
+                    
+                    messages = [
+                        SystemMessage(content=system_prompt),
+                        HumanMessage(content=f"Text chunk {index + 1}/{total_chunks}:\n\n{chunk}")
+                    ]
+                    
+                    # Stream the response for this chunk
+                    full_content = ""
+                    async for delta in self.llm.astream(messages):
+                        content = delta.content
+                        if content:
+                            full_content += content
+                            await queue.put({"index": index, "content": content, "status": "running"})
+                    
+                    # Signal chunk completion
+                    await queue.put({"index": index, "content": "", "status": "done", "full_content": full_content})
+                    return full_content
+                    
                 except Exception as e:
                     logger.error(f"Error processing chunk {index + 1}: {str(e)}")
-                    return {"index": index, "content": f"[Error in chunk {index + 1}]"}
+                    await queue.put({"index": index, "content": f"\n[Error: {str(e)}]", "status": "error"})
+                    return ""
 
-        tasks = [process_chunk(i, chunk) for i, chunk in enumerate(chunks)]
+        # Start producer tasks
+        producer_tasks = [asyncio.create_task(process_chunk(i, chunk)) for i, chunk in enumerate(chunks)]
         
-        summaries = [None] * total_chunks
-        for task in asyncio.as_completed(tasks):
-            result = await task
-            summaries[result["index"]] = result["content"]
-            yield result
+        # Consumer loop
+        finished_producers = 0
+        summaries = [""] * total_chunks
+        
+        while finished_producers < total_chunks:
+            item = await queue.get()
+            yield item
+            
+            if item.get("status") in ["done", "error"]:
+                finished_producers += 1
+                if item.get("status") == "done":
+                    summaries[item["index"]] = item.get("full_content", "")
+            
+            queue.task_done()
 
-        # Final synthesis if multiple chunks
-        if len(chunks) > 1:
+        # Synthesis Phase
+        # Always run synthesis, even for single chunks, to ensure:
+        # 1. Consistent formatting ("Master Intelligence Document" style)
+        # 2. Streaming behavior in the UI (User requested "Final Synthesis" to be streaming)
+        if summaries:
             if status_callback:
                 res = status_callback("Synthesizing final summary...")
                 if asyncio.iscoroutine(res): await res
             
             combined_summaries = "\n\n---\n\n".join([s for s in summaries if s])
             final_system = (
-                "You are a Master Synthesis Architect. You will receive several partial summaries extracted from a larger document. Your task is to unify them into a single, cohesive, and comprehensive 'Master Intelligence Document'.\n\n"
+                "You are a Master Synthesis Architect. You will receive one or more partial summaries extracted from a larger document. "
+                "Your task is to unify them into a single, cohesive, and comprehensive 'Master Intelligence Document'.\n\n"
                 "Your final synthesis must:\n"
                 "1. **Eliminate Redundancy**: Merge overlapping information into a crisp structure.\n"
                 "2. **Enforce Chronology**: If the content involves processes or history, ensure a logical timeline.\n"
@@ -140,11 +171,17 @@ class LLMExtractionService:
                 "such that it can be easily transformed into architectural diagrams or logical maps.\n\n"
                 "The goal is to provide the ultimate context for a diagram-generation agent to create accurate and professional visual representations of the original document."
             ) + get_time_instructions()
+            
             final_messages = [
                 SystemMessage(content=final_system),
                 HumanMessage(content=f"Partial Summaries:\n\n{combined_summaries}")
             ]
-            final_response = await self.llm.ainvoke(final_messages)
-            yield {"index": -1, "content": final_response.content, "is_final": True}
-        else:
-            yield {"index": -1, "content": summaries[0] if summaries else "", "is_final": True}
+            
+            # Stream synthesis
+            async for delta in self.llm.astream(final_messages):
+                content = delta.content
+                if content:
+                    yield {"index": -1, "content": content, "status": "running"}
+            
+            yield {"index": -1, "content": "", "status": "done"}
+

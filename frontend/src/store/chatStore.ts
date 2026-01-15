@@ -210,6 +210,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         if (targetIdx !== -1) {
             const msg = { ...allMsgs[targetIdx] };
+
+            // Prevent duplicate agent_select steps
+            const lastStep = msg.steps && msg.steps.length > 0 ? msg.steps[msg.steps.length - 1] : null;
+            if (step.type === 'agent_select' && lastStep?.type === 'agent_select' && lastStep?.name === step.name) {
+                // Ignore duplicate
+                return {};
+            }
+
             msg.steps = [...(msg.steps || []), { ...step, timestamp: Date.now() }];
             allMsgs[targetIdx] = msg;
 
@@ -345,7 +353,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     content,
                     status
                 });
-                blocks.sort((a, b) => a.index - b.index);
+                blocks.sort((a, b) => {
+                    if (a.index === -1) return 1;
+                    if (b.index === -1) return -1;
+                    return a.index - b.index;
+                });
             }
 
             msg.docAnalysisBlocks = blocks;
@@ -414,7 +426,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
                                             status: 'done'
                                         });
                                     }
-                                } catch (e) {
+                                }
+                                catch (e) {
                                     // Fallback for plain text content
                                     docAnalysisBlocks.push({
                                         index: -1,
@@ -425,7 +438,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
                             }
                         });
                     }
-                    docAnalysisBlocks.sort((a, b) => a.index - b.index);
+
+                    // Deduplicate blocks by index, keeping the last one found
+                    const uniqueBlocksMap = new Map<number, DocAnalysisBlock>();
+                    docAnalysisBlocks.forEach(block => {
+                        uniqueBlocksMap.set(block.index, block);
+                    });
+                    const uniqueBlocks = Array.from(uniqueBlocksMap.values());
+
+                    uniqueBlocks.sort((a, b) => {
+                        if (a.index === -1) return 1;
+                        if (b.index === -1) return -1;
+                        return a.index - b.index;
+                    });
 
                     return {
                         id: m.id,
@@ -437,7 +462,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                         agent: m.agent,
                         turn_index: m.turn_index,
                         created_at: m.created_at,
-                        docAnalysisBlocks: docAnalysisBlocks.length > 0 ? docAnalysisBlocks : undefined,
+                        docAnalysisBlocks: uniqueBlocks.length > 0 ? uniqueBlocks : undefined,
                     };
                 });
 
