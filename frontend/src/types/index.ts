@@ -1,7 +1,7 @@
 export type AgentType = 'mindmap' | 'flowchart' | 'charts' | 'drawio' | 'mermaid' | 'infographic' | 'general';
 
 export interface Step {
-    type: 'agent_select' | 'tool_start' | 'tool_end' | 'doc_analysis' | 'agent_end';
+    type: 'agent_select' | 'tool_start' | 'tool_end' | 'doc_analysis' | 'agent_end' | 'design_concept';
     name?: string; // e.g. "mindmap_agent", "create_chart"
     content?: string; // Input or Output
     status: 'running' | 'done' | 'error';

@@ -68,7 +68,7 @@ const AGENTS = [
         features: ['Data posters', 'Visual storytelling', 'Creative layouts'],
         icon: BarChart3,
         color: 'violet',
-        demoInput: '@infographic a visually stunning horizontal timeline of the Industrial Revolutions, from Steam Power to Industry 4.0, using professional icons and descriptions.'
+        demoInput: '@infographic comparing the nutritional benefits of 5 superfoods (Salmon, Blueberries, Spinach, Quinoa, Almonds) with colorful icons, health stats, and serving suggestions.'
     },
 ];
 
@@ -751,6 +751,29 @@ export const ChatPanel = () => {
                                         status: 'done',
                                         timestamp: Date.now()
                                     }, eventSessionId);
+                                    break;
+
+                                case 'design_concept_start':
+                                    // Add a new design_concept step
+                                    addStepToLastMessage({
+                                        type: 'design_concept',
+                                        name: 'Design Concept',
+                                        content: '',
+                                        status: 'running',
+                                        timestamp: Date.now(),
+                                        isStreaming: true
+                                    }, eventSessionId);
+                                    break;
+
+                                case 'design_concept':
+                                    if (data.content) {
+                                        updateLastStepContent(data.content, true, 'running', 'design_concept', true, eventSessionId);
+                                    }
+                                    break;
+
+                                case 'design_concept_end':
+                                    // Mark design_concept as done - use append=true to preserve existing content
+                                    updateLastStepContent('', false, 'done', 'design_concept', true, eventSessionId);
                                     break;
 
                                 case 'tool_start':

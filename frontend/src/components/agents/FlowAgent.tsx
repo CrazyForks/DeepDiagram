@@ -215,7 +215,11 @@ const nodeTypes = {
 
 export const FlowAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) => {
     const { isStreamingCode } = useChatStore();
-    const currentCode = cleanContent(content);
+    let currentCode = cleanContent(content);
+    // Fix double-escaped newlines from LLM output
+    if (currentCode.includes('\\n') && !currentCode.includes('\n')) {
+        currentCode = currentCode.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+    }
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [error, setError] = useState<string | null>(null);

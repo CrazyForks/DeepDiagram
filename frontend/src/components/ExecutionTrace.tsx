@@ -1,11 +1,96 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { cn, copyToClipboard, parseMixedContent, type ContentBlock } from '../lib/utils';
-import { BrainCircuit, Terminal, CheckCircle, ChevronDown, ChevronRight, Activity, Copy, Play, Check, RotateCcw } from 'lucide-react';
+import { BrainCircuit, Terminal, CheckCircle, ChevronDown, ChevronRight, Activity, Copy, Play, Check, RotateCcw, Lightbulb } from 'lucide-react';
 import { ThinkingPanel } from './common/ThinkingPanel';
 import { useChatStore } from '../store/chatStore';
 import type { Step } from '../types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+// Design Concept Item - Yellow card that auto-collapses when done
+const DesignConceptItem = ({ step }: { step: Step }) => {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    // Use state to preserve content - initialize with step.content or empty
+    const [preservedContent, setPreservedContent] = useState(step.content || '');
+    // Track if we ever had content (persists across re-renders)
+    const hadContentRef = useRef(!!step.content);
+    // Start collapsed for historical items, expanded during streaming
+    const [isExpanded, setIsExpanded] = useState(!!step.isStreaming);
+
+    // Update preserved content when we get new content
+    useEffect(() => {
+        if (step.content) {
+            if (step.content.length > preservedContent.length) {
+                setPreservedContent(step.content);
+            }
+            hadContentRef.current = true;
+        }
+    }, [step.content, preservedContent.length]);
+
+    // hasContent is true if we have preserved content OR ever had content
+    const hasContent = preservedContent.length > 0 || hadContentRef.current;
+
+    // Auto-expand when streaming, auto-collapse when done
+    useEffect(() => {
+        if (step.isStreaming) {
+            setIsExpanded(true);
+        } else if (step.status === 'done' && hasContent) {
+            // Auto-collapse after a brief moment when streaming ends
+            const timer = setTimeout(() => setIsExpanded(false), 1500);
+            return () => clearTimeout(timer);
+        }
+    }, [step.isStreaming, step.status, hasContent]);
+
+    // Auto-scroll to bottom during streaming
+    useEffect(() => {
+        if (step.isStreaming && scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+    }, [step.content, step.isStreaming]);
+
+    return (
+        <div className={cn(
+            "flex flex-col text-xs rounded-lg font-mono border transition-all",
+            "bg-amber-50 border-amber-200 text-amber-900 shadow-sm"
+        )}>
+            <div
+                className={cn("flex items-center gap-2 p-2", hasContent && "cursor-pointer hover:bg-amber-100/50")}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (hasContent) setIsExpanded(!isExpanded);
+                }}
+            >
+                <Lightbulb className="w-3.5 h-3.5 text-amber-600" />
+                <div className="flex-1 font-semibold">
+                    Design Concept
+                    {step.isStreaming && (
+                        <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-700 rounded border border-amber-200 flex items-center gap-1 inline-flex">
+                            <Activity className="w-2.5 h-2.5 animate-pulse" />
+                            Thinking...
+                        </span>
+                    )}
+                </div>
+                {hasContent && (
+                    <div className="text-amber-400">
+                        {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    </div>
+                )}
+            </div>
+
+            {isExpanded && (
+                <div className="px-2 pb-2 overflow-hidden animate-in slide-in-from-top-1 duration-200">
+                    <div ref={scrollRef} className="bg-white/50 rounded border border-amber-200 p-2 overflow-y-auto max-h-[200px] custom-scrollbar">
+                        <div className="prose prose-amber prose-sm max-w-none prose-p:my-1 text-[11px] leading-relaxed">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {preservedContent}
+                            </ReactMarkdown>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 interface ExecutionTraceProps {
     steps: Step[];
@@ -298,6 +383,14 @@ export const ExecutionTrace = ({ steps, thoughts = [], messageIndex, onRetry, on
                         for (let idx = 0; idx < steps.length; idx++) {
                             const step = steps[idx];
                             if (step.type === 'doc_analysis') continue;
+
+                            // Render design_concept with special component
+                            if (step.type === 'design_concept') {
+                                renderedSteps.push(
+                                    <DesignConceptItem key={`step-${idx}`} step={step} />
+                                );
+                                continue;
+                            }
 
                             // Render the step
                             let associatedResult = undefined;

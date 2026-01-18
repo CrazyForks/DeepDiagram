@@ -144,6 +144,10 @@ export const MindmapAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) 
     let currentCode = cleanContent(content);
     // Robustness: Strip markdown code fences if present
     currentCode = currentCode.replace(/^```(?:\w+)?\s*\n/, '').replace(/```\s*$/, '').trim();
+    // Fix double-escaped newlines from LLM output (literal \n instead of actual newlines)
+    if (currentCode.includes('\\n') && !currentCode.includes('\n')) {
+        currentCode = currentCode.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+    }
 
     const mindmapRef = useRef<HTMLDivElement>(null);
     const mindmapInstanceRef = useRef<any>(null);

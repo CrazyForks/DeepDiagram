@@ -7,7 +7,11 @@ import { AlertCircle } from 'lucide-react';
 
 export const ChartsAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) => {
     const { isStreamingCode } = useChatStore();
-    const currentCode = cleanContent(content);
+    let currentCode = cleanContent(content);
+    // Fix double-escaped newlines from LLM output
+    if (currentCode.includes('\\n') && !currentCode.includes('\n')) {
+        currentCode = currentCode.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+    }
     const chartRef = useRef<HTMLDivElement>(null);
     const chartInstanceRef = useRef<echarts.ECharts | null>(null);
     const [error, setError] = useState<string | null>(null);

@@ -70,13 +70,18 @@
 
 ## ✨ 高级特性
 
-### 🤖 智能路由与 ReAct 编排
+### 🤖 智能路由与直接 JSON 输出
 - **上下文感知路由**: 根据以下条件自动将请求路由到最优智能体：
-  - 显式标签（如 `@mindmap`、`@flow`）
+  - 显式标签（如 `@mindmap`、`@flow`、`@charts`）
   - LLM 意图识别，提供完整的智能体能力描述
   - 对话上下文（优先使用上一次激活的智能体以保持连续性）
-- **ReAct 机制**: 每个智能体在推理-行动循环中运行，迭代调用工具直到任务完成
+- **直接 JSON 输出**: 每个智能体直接输出 `{"design_concept": "...", "code": "..."}`，无需工具调用
 - **多模态支持**: 上传白板、草图或技术图表进行数字化处理
+
+### 💡 设计思路流式输出
+- **AI 推理可见性**: 实时查看 AI 的设计思维和架构决策
+- **可折叠面板**: 黄色主题卡片在流式传输时自动展开，完成后自动折叠
+- **Markdown 渲染**: 设计思路支持富文本格式，包括标题、列表和强调
 
 ### 📜 持久化历史与消息分支
 - **会话管理**: 维护多个聊天会话，自动恢复状态（包括图表和执行过程回溯）
@@ -93,10 +98,10 @@
 - **时间感知**: 所有智能体都能感知当前日期/时间，用于准确的时间线生成和日程安排
 
 ### 🎯 实时流式传输与执行轨迹
-- **SSE 实时预览**: 使用服务器推送事件（SSE）实时流式传输思维过程和代码生成
+- **双流 SSE**: 设计思路和代码独立流式传输，优化用户体验
 - **执行轨迹可视化**:
   - 智能体选择跟踪
-  - 工具调用输入/输出日志记录
+  - 设计思路与 AI 推理过程
   - 流式代码生成，带语法高亮
   - 上下文相关的"渲染"和"重试"操作
 - **错误处理**: 清晰的视觉反馈，渲染失败时可即时重试
@@ -111,53 +116,67 @@
 
 ## 🏗 系统架构
 
-DeepDiagram AI 使用 **React 19 + FastAPI** 架构，由 **LangGraph** 进行编排。更新通过 **SSE（服务器推送事件）** 流式传输到前端，实现实时预览体验。
+DeepDiagram AI 使用 **React 19 + FastAPI** 架构，由 **LangGraph** 进行编排。每个专业智能体直接输出包含 `design_concept` 和 `code` 字段的结构化 JSON，通过 **SSE（服务器推送事件）** 流式传输到前端，实现实时预览体验。
 
 ```mermaid
 graph TD
     Input[用户请求: 文本/图片/文档] --> Router[智能路由]
-    Router -- 状态同步 --> Graph[LangGraph 编排层]
+    Router -- 意图分类 --> Graph[LangGraph 编排层]
 
-    subgraph Agents [专业智能体]
-        AgentMM[思维导图智能体]
-        AgentFlow[流程图智能体]
-        AgentChart[数据图表智能体]
-        AgentDraw[Draw.io 智能体]
-        AgentMermaid[Mermaid 智能体]
-        AgentInfo[信息图智能体]
+    subgraph Agents [专业智能体 - 直接 JSON 输出]
+        AgentMM[思维导图智能体<br/>Markdown/Markmap]
+        AgentFlow[流程图智能体<br/>React Flow JSON]
+        AgentChart[数据图表智能体<br/>ECharts 配置]
+        AgentDraw[Draw.io 智能体<br/>mxGraph XML]
+        AgentMermaid[Mermaid 智能体<br/>Mermaid 语法]
+        AgentInfo[信息图智能体<br/>AntV DSL]
+        AgentGeneral[通用智能体<br/>纯文本]
     end
 
-    Graph --> Agents
+    Graph -->|按意图路由| Agents
 
-    subgraph Loop [ReAct 机制]
-        Agents --> LLM{LLM 推理}
-        LLM -->|工具调用| Tools[智能体专属工具]
-        Tools -->|执行结果| LLM
-        LLM -->|最终响应| Code[结构化输出: JSON/XML/Markdown]
+    subgraph Output [流式 JSON 输出]
+        Agents -->|LLM 生成| JSON["{ design_concept, code }"]
+        JSON -->|解析与流式传输| Parser[StreamingJsonParser]
     end
 
-    Code -->|SSE 流| Backend[FastAPI 后端]
-    Backend -->|实时预览| Frontend[React 19 前端]
-    Frontend -->|渲染| Canvas[交互式画布]
+    Parser -->|design_concept 事件| DC[设计思路流]
+    Parser -->|code 事件| Code[代码流]
+
+    DC -->|SSE| Frontend[React 19 前端]
+    Code -->|SSE| Frontend
+
+    Frontend -->|实时渲染| Canvas[交互式画布]
+    Frontend -->|执行轨迹| Trace[执行轨迹 UI]
 
     style Input fill:#f9f,stroke:#333
     style Router fill:#bbf,stroke:#333
-    style Code fill:#bfb,stroke:#333
+    style JSON fill:#bfb,stroke:#333
     style Canvas fill:#fdf,stroke:#333
+    style DC fill:#ffc,stroke:#333
 ```
+
+### 架构亮点
+
+- **无工具调用**: 智能体直接输出 JSON `{"design_concept": "...", "code": "..."}`，无需中间工具调用
+- **流式 JSON 解析器**: 实时解析部分 JSON，正确处理转义序列
+- **双流输出**: `design_concept`（AI 推理）和 `code`（图表内容）独立流式传输
+- **设计思路 UI**: 黄色可折叠面板，在渲染前展示 AI 的设计思维
 
 ### 核心组件
 
 **后端（Python）**
-- `dispatcher.py`: 基于意图的路由，支持显式标签和 LLM 回退
-- `graph.py`: LangGraph 状态机，定义智能体编排逻辑
+- `dispatcher.py`: 基于意图的路由，支持显式 `@agent` 标签和 LLM 回退
+- `graph.py`: LangGraph 状态机，Router → Agent → END 流程
+- `routes.py`: SSE 端点，包含 `StreamingJsonParser` 实现实时 JSON 解析
 - `file_service.py`: 并发文档解析和 LLM 提取
 - `chat.py`: 会话和消息 CRUD，支持分支功能
 - SQLModel ORM，配合异步 PostgreSQL 驱动
 
 **前端（React）**
-- `ChatPanel.tsx`: 消息历史、输入处理、执行轨迹渲染
+- `ChatPanel.tsx`: 消息历史、SSE 处理、执行轨迹渲染
 - `CanvasPanel.tsx`: 动态智能体组件加载和渲染
+- `ExecutionTrace.tsx`: 可视化执行轨迹，包含 `DesignConceptItem` 组件
 - `chatStore.ts`: Zustand 状态管理，用于消息、会话和版本
 - 智能体专属渲染器：`MindmapAgent`、`FlowAgent`、`MermaidAgent` 等
 
@@ -291,7 +310,7 @@ MODEL_ID=your-model-name
 ## 🗺 路线图
 
 - [x] 包含 6 个核心智能体的 MVP（思维导图、流程图、图表、Draw.io、Mermaid、信息图）
-- [x] 基于 LangGraph 的 ReAct 编排
+- [x] 基于 LangGraph 的智能体编排
 - [x] 具有上下文感知的智能路由
 - [x] 可调整的任务栏布局
 - [x] 持久化会话与聊天历史
@@ -300,6 +319,8 @@ MODEL_ID=your-model-name
 - [x] SSE 实时流式传输
 - [x] 执行轨迹可视化
 - [x] UI/UX 优化（响应式表格、加载状态）
+- [x] 直接 JSON 输出（无工具调用）
+- [x] 设计思路流式输出，AI 推理过程可见
 - [ ] 协同编辑（通过 WebSocket 实时同步）
 - [ ] 自定义智能体插件系统
 - [ ] 高级导出选项（PowerPoint、Word）

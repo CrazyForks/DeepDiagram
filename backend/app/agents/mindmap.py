@@ -1,9 +1,6 @@
-from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_core.tools import tool
+from langchain_core.messages import SystemMessage
 from app.state.state import AgentState
-from app.core.config import settings
-from app.core.llm import get_llm, get_configured_llm, get_thinking_instructions
-from app.core.context import set_context, get_messages, get_context
+from app.core.llm import get_configured_llm, get_thinking_instructions
 
 MINDMAP_SYSTEM_PROMPT = """You are a World-Class Strategic Thinking Partner and Knowledge Architect. Your goal is to generate deep, insightful, and visually balanced mindmaps using Markdown (Markmap).
 
@@ -22,116 +19,64 @@ MINDMAP_SYSTEM_PROMPT = """You are a World-Class Strategic Thinking Partner and 
 - **INSIGHTFUL ADDITIONS**: Proactively add "Risks", "Opportunities", or "Best Practices" branches if relevant to the topic.
 - **LANGUAGE**: Match user's input language.
 
-### OUTPUT FORMAT
-- Return ONLY the raw Markdown. No code fences. No introductory text.
+### OUTPUT FORMAT - CRITICAL
+You MUST output a valid JSON object with exactly this structure:
+{"design_concept": "<your design thinking and approach>", "code": "<the markdown mindmap code>"}
+
+Rules:
+1. The JSON must be valid - use standard JSON escaping for the string values
+2. "design_concept" should briefly explain your knowledge architecture decisions and categorization rationale
+3. "code" contains the Markdown mindmap with proper JSON string escaping (no code fences)
+4. Output ONLY the JSON object, nothing else before or after
+
+Example output (note: this is a simplified example):
+{"design_concept": "Organized Python ecosystem into core pillars.", "code": "# Python\\n## Core Language\\n- Syntax\\n- Data Types\\n## Libraries\\n- NumPy\\n- Pandas"}
 """
 
-@tool
-async def create_mindmap(instruction: str):
-    """
-    Renders a MindMap based on instructions.
-    Args:
-        instruction: Detailed instruction on what mindmap to create or modify.
-    """
-    messages = get_messages()
-    context = get_context()
-    current_code = context.get("current_code", "")
-    model_config = context.get("model_config")
-    
-    # Get configured LLM
-    llm = get_llm(
-        api_key=model_config.get("api_key") if model_config else None,
-        base_url=model_config.get("base_url") if model_config else None,
-        model_name=model_config.get("model_id") if model_config else None
-    )
-    
-    # Call LLM to generate the Mindmap code
-    system_msg = MINDMAP_SYSTEM_PROMPT + get_thinking_instructions()
-    if current_code:
-        system_msg += f"\n\n### CURRENT MINDMAP CODE (Markdown)\n```markdown\n{current_code}\n```\nApply changes to this code."
-
-    prompt = [SystemMessage(content=system_msg)] + messages
-    if instruction:
-        prompt.append(HumanMessage(content=f"Instruction: {instruction}"))
-    
-    full_content = ""
-    async for chunk in llm.astream(prompt):
-        if chunk.content:
-            full_content += chunk.content
-    
-    # Robust Stripping: Extract from ``` blocks if present
-    import re
-    # Remove any thinking tags first
-    full_content = re.sub(r'<think>[\s\S]*?</think>', '', full_content, flags=re.DOTALL)
-
-    code_block_match = re.search(r'```(?:\w+)?\n([\s\S]*?)```', full_content)
-    if code_block_match:
-        full_content = code_block_match.group(1).strip()
-    
-    # Simply return the markdown so the frontend can render it.
-    return full_content
-
-tools = [create_mindmap]
+def extract_current_code_from_messages(messages) -> str:
+    """Extract the latest mindmap code from message history."""
+    for msg in reversed(messages):
+        # Check for tool messages (legacy format)
+        if msg.type == "tool" and msg.content:
+            stripped = msg.content.strip()
+            if stripped.startswith("#"):
+                return stripped
+        # Check for AI messages with steps containing tool_end
+        if msg.type == "ai" and hasattr(msg, 'additional_kwargs'):
+            steps = msg.additional_kwargs.get('steps', [])
+            for step in reversed(steps):
+                if step.get('type') == 'tool_end' and step.get('content'):
+                    content = step['content'].strip()
+                    if content.startswith("#"):
+                        return content
+    return ""
 
 async def mindmap_agent_node(state: AgentState):
     messages = state['messages']
-    model_config = state.get("model_config")
-    
-    # 动态从历史中提取最新的 mindmap 代码（寻找最后一条 tool 消息且内容非空）
-    current_code = ""
-    for msg in reversed(messages):
-        if msg.type == "tool" and msg.content:
-            # 简单判断是否是 mindmap (Markdown 格式) 
-            # 更好的办法是判断 tool_name，但目前 content 已经足够
-            stripped = msg.content.strip()
-            if stripped.startswith("#"):
-                current_code = stripped
-                break
+
+    # Extract current code from history
+    current_code = extract_current_code_from_messages(messages)
 
     # Safety: Ensure no empty text content blocks reach the LLM
     for msg in messages:
         if hasattr(msg, 'content') and not msg.content:
             msg.content = "Generate a mindmap"
 
-    set_context(messages, current_code=current_code, model_config=model_config)
-    
-    system_prompt = """You are a Visionary Strategic Thinking Partner.
-    YOUR MISSION is to act as a Mental Model Consultant. When a user provides a topic, don't just "brainstorm" it—MAP the entire ecosystem.
+    # Build system prompt
+    system_content = MINDMAP_SYSTEM_PROMPT + get_thinking_instructions()
+    if current_code:
+        system_content += f"\n\n### CURRENT MINDMAP CODE (Markdown)\n```markdown\n{current_code}\n```\nApply changes to this code based on the user's request."
 
-    ### ⚠️ CRITICAL REQUIREMENT - MUST USE TOOLS:
-    **YOU MUST USE THE `create_mindmap` TOOL TO GENERATE DIAGRAMS. NEVER OUTPUT DIAGRAM CODE DIRECTLY IN YOUR TEXT RESPONSE.**
-    - You MUST call the `create_mindmap` tool - this is non-negotiable.
-    - Do NOT write Markdown mindmap syntax in your response text.
-    - Do NOT provide code blocks with diagram syntax in your text.
-    - ONLY use the tool call mechanism to generate diagrams.
+    system_prompt = SystemMessage(content=system_content)
 
-    ### ORCHESTRATION RULES:
-    1. **STRATEGIC EXPANSION**: If the user says "mindmap for a startup", expand it to "create a 5-level deep mindmap for a tech startup, covering Product/Market Fit, Scaling Strategy, Financial Runway, Team Culture, and Technology Stack, with detailed sub-points and action items".
-    2. **MANDATORY TOOL CALL**: Always use `create_mindmap`.
-    3. **HI-FI HIERARCHY**: Instruct the tool to avoid shallow maps. Enforce a minimum of 4 levels of depth.
-    4. **METAPHORICAL THINKING**: Use categories that represent the "Full Picture" (e.g., SWOT analysis, 5W1H, or First Principles).
-    
-    ### LANGUAGE CONSISTENCY:
-    - Respond and call tools in the SAME LANGUAGE as the user.
-    
-    ### PROACTIVENESS:
-    - BE DECISIVE. If a topic has obvious "Pros/Cons" or "Future Risks", include them in the brainstormed instructions.
-    """ + get_thinking_instructions()
-    
-    llm = get_llm(
-        api_key=model_config.get("api_key") if model_config else None,
-        base_url=model_config.get("base_url") if model_config else None,
-        model_name=model_config.get("model_id") if model_config else None
-    )
-    llm_with_tools = llm.bind_tools(tools)
-    
+    llm = get_configured_llm(state)
+
+    # Stream the response - the graph event handler will parse the JSON
     full_response = None
-    async for chunk in llm_with_tools.astream([system_prompt] + messages):
+    async for chunk in llm.astream([system_prompt] + messages):
         if full_response is None:
             full_response = chunk
         else:
             full_response += chunk
-    return {"messages": [full_response]}
 
-# Simple ReAct loop for the agent could be implemented here or managed by the top-level graph.
-# For simplicity, we'll define the node here and likely bind it in the main graph.
+    return {"messages": [full_response]}

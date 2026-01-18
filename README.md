@@ -70,13 +70,18 @@
 
 ## ✨ Advanced Features
 
-### 🤖 Intelligent Router & ReAct Orchestration
+### 🤖 Intelligent Router & Direct JSON Output
 - **Context-Aware Routing**: Automatically routes requests to the optimal agent based on:
-  - Explicit mentions (e.g., `@mindmap`, `@flow`)
+  - Explicit mentions (e.g., `@mindmap`, `@flow`, `@charts`)
   - LLM intent recognition with full agent capability descriptions
   - Conversation context (prefers last active agent for continuity)
-- **ReAct Mechanism**: Each agent operates in a Reasoning-Acting loop, calling tools iteratively until task completion
+- **Direct JSON Output**: Each agent outputs `{"design_concept": "...", "code": "..."}` directly without tool calls
 - **Multimodal Support**: Upload whiteboards, sketches, or technical diagrams for digitization
+
+### 💡 Design Concept Streaming
+- **AI Reasoning Visibility**: See the AI's design thinking and architectural decisions in real-time
+- **Collapsible Panel**: Yellow-themed card auto-expands during streaming, collapses when complete
+- **Markdown Rendering**: Design concepts support rich formatting with headers, lists, and emphasis
 
 ### 📜 Persistent History & Message Branching
 - **Session Management**: Maintain multiple chat sessions with automatic state restoration (including diagrams and process traces)
@@ -93,10 +98,10 @@
 - **Time-Aware**: All agents are aware of the current date/time for accurate timeline generation and scheduling
 
 ### 🎯 Real-Time Streaming & Process Trace
-- **SSE Live Preview**: Server-Sent Events stream thinking processes and code generation in real-time
+- **Dual-Stream SSE**: Design concept and code stream independently for optimal UX
 - **Execution Trace Visualization**:
   - Agent selection tracking
-  - Tool call input/output logging
+  - Design concept with AI reasoning
   - Streaming code generation with syntax highlighting
   - Contextual "Render" and "Retry" actions
 - **Error Handling**: Clear visual feedback for rendering failures with instant retry capability
@@ -111,53 +116,67 @@
 
 ## 🏗 System Architecture
 
-DeepDiagram AI uses a **React 19 + FastAPI** architecture, orchestrated by **LangGraph**. Updates are streamed to the frontend via **SSE (Server-Sent Events)** for a live preview experience.
+DeepDiagram AI uses a **React 19 + FastAPI** architecture, orchestrated by **LangGraph**. Each specialized agent directly outputs structured JSON with `design_concept` and `code` fields, streamed to the frontend via **SSE (Server-Sent Events)** for real-time preview.
 
 ```mermaid
 graph TD
     Input[User Request: Text/Images/Documents] --> Router[Intelligent Router]
-    Router -- State Sync --> Graph[LangGraph Orchestrator]
+    Router -- Intent Classification --> Graph[LangGraph Orchestrator]
 
-    subgraph Agents [Specialized Agents]
-        AgentMM[MindMap Agent]
-        AgentFlow[Flowchart Agent]
-        AgentChart[Data Chart Agent]
-        AgentDraw[Draw.io Agent]
-        AgentMermaid[Mermaid Agent]
-        AgentInfo[Infographic Agent]
+    subgraph Agents [Specialized Agents - Direct JSON Output]
+        AgentMM[MindMap Agent<br/>Markdown/Markmap]
+        AgentFlow[Flowchart Agent<br/>React Flow JSON]
+        AgentChart[Data Chart Agent<br/>ECharts Config]
+        AgentDraw[Draw.io Agent<br/>mxGraph XML]
+        AgentMermaid[Mermaid Agent<br/>Mermaid Syntax]
+        AgentInfo[Infographic Agent<br/>AntV DSL]
+        AgentGeneral[General Agent<br/>Plain Text]
     end
 
-    Graph --> Agents
+    Graph -->|Route by Intent| Agents
 
-    subgraph Loop [ReAct Mechanism]
-        Agents --> LLM{LLM Reasoning}
-        LLM -->|Tool Call| Tools[Agent-Specific Tools]
-        Tools -->|Execution Result| LLM
-        LLM -->|Final Response| Code[Structured Output: JSON/XML/Markdown]
+    subgraph Output [Streaming JSON Output]
+        Agents -->|LLM Generation| JSON["{ design_concept, code }"]
+        JSON -->|Parse & Stream| Parser[StreamingJsonParser]
     end
 
-    Code -->|SSE Stream| Backend[FastAPI Backend]
-    Backend -->|Live Preview| Frontend[React 19 Frontend]
-    Frontend -->|Render| Canvas[Interactive Canvas]
+    Parser -->|design_concept events| DC[Design Concept Stream]
+    Parser -->|code events| Code[Code Stream]
+
+    DC -->|SSE| Frontend[React 19 Frontend]
+    Code -->|SSE| Frontend
+
+    Frontend -->|Real-time Render| Canvas[Interactive Canvas]
+    Frontend -->|Process Trace| Trace[Execution Trace UI]
 
     style Input fill:#f9f,stroke:#333
     style Router fill:#bbf,stroke:#333
-    style Code fill:#bfb,stroke:#333
+    style JSON fill:#bfb,stroke:#333
     style Canvas fill:#fdf,stroke:#333
+    style DC fill:#ffc,stroke:#333
 ```
+
+### Architecture Highlights
+
+- **No Tool Calls**: Agents directly output JSON `{"design_concept": "...", "code": "..."}` without intermediate tool invocations
+- **Streaming JSON Parser**: Real-time parsing of partial JSON with proper escape sequence handling
+- **Dual-Stream Output**: `design_concept` (AI reasoning) and `code` (diagram content) stream independently
+- **Design Concept UI**: Yellow collapsible panel shows AI's design thinking before rendering
 
 ### Key Components
 
 **Backend (Python)**
-- `dispatcher.py`: Intent-based routing with explicit tags and LLM fallback
-- `graph.py`: LangGraph state machine defining agent orchestration
+- `dispatcher.py`: Intent-based routing with explicit `@agent` tags and LLM fallback
+- `graph.py`: LangGraph state machine with Router → Agent → END flow
+- `routes.py`: SSE endpoint with `StreamingJsonParser` for real-time JSON parsing
 - `file_service.py`: Concurrent document parsing and LLM extraction
 - `chat.py`: Session and message CRUD with branching support
 - SQLModel ORM with async PostgreSQL driver
 
 **Frontend (React)**
-- `ChatPanel.tsx`: Message history, input handling, execution trace rendering
+- `ChatPanel.tsx`: Message history, SSE handling, execution trace rendering
 - `CanvasPanel.tsx`: Dynamic agent component loading and rendering
+- `ExecutionTrace.tsx`: Visual process trace with `DesignConceptItem` component
 - `chatStore.ts`: Zustand state management for messages, sessions, and versions
 - Agent-specific renderers: `MindmapAgent`, `FlowAgent`, `MermaidAgent`, etc.
 
@@ -291,7 +310,7 @@ Or configure interactively in the UI:
 ## 🗺 Roadmap
 
 - [x] MVP with 6 Core Agents (MindMap, Flow, Charts, Draw.io, Mermaid, Infographic)
-- [x] LangGraph-based ReAct Orchestration
+- [x] LangGraph-based Agent Orchestration
 - [x] Intelligent Router with Context-Awareness
 - [x] Resizable Dashboard Layout
 - [x] Persistent Session & Chat History
@@ -300,6 +319,8 @@ Or configure interactively in the UI:
 - [x] SSE Real-Time Streaming
 - [x] Execution Trace Visualization
 - [x] UI/UX Polishing (Responsive Tables, Loading States)
+- [x] Direct JSON Output (No Tool Calls)
+- [x] Design Concept Streaming with AI Reasoning Visibility
 - [ ] Collaborative Editing (Real-time Sync via WebSockets)
 - [ ] Custom Agent Plugin System
 - [ ] Advanced Export Options (PowerPoint, Word)

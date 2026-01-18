@@ -1,114 +1,101 @@
-from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_core.tools import tool
-from app.core.config import settings
-from app.core.llm import get_llm, get_configured_llm, get_thinking_instructions
+from langchain_core.messages import SystemMessage
 from app.state.state import AgentState
-from app.core.context import get_messages, get_context, set_context
+from app.core.llm import get_configured_llm, get_thinking_instructions
 
-DRAWIO_SYSTEM_PROMPT = """You are a Principal Cloud Solutions Architect and Draw.io (mxGraph) Master. Your goal is to generate professional, high-fidelity, and architecturally accurate Draw.io XML.
+DRAWIO_SYSTEM_PROMPT = """You are a Principal Cloud Solutions Architect and Draw.io (mxGraph) Master. Your goal is to generate professional, high-fidelity, and architecturally accurate Draw.io XML with rich visual details.
 
 ### ARCHITECTURAL PRINCIPLES
 - **Structural Integrity**: Don't just draw blocks. Design complete systems. For "Microservices", include API Gateways, Service Discovery, Load Balancers, and dedicated Data Stores.
 - **Logical Zonation**: Use containers, swimlanes, or VPC boundaries to group related components. Clearly separate Frontend, Backend, Data, and Sidecar layers.
-- **Visual Professionalism**: Align elements on a clean grid. Use standard architectural symbols (cylinders for DBs, clouds for VPCs, gear for processing). Use professional, unified color palettes (e.g., AWS/Azure/GCP standard colors).
+- **Visual Professionalism**: Align elements on a clean grid. Use standard architectural symbols (cylinders for DBs, clouds for VPCs, gear for processing).
+
+### VISUAL RICHNESS GUIDELINES (CRITICAL)
+- **Color Palette**: Use vibrant, professional colors with gradients. Apply different colors to distinguish component types:
+  - Frontend/UI: Blue tones (#4A90D9, #2196F3)
+  - Backend/API: Green tones (#4CAF50, #66BB6A)
+  - Database/Storage: Orange/Yellow (#FF9800, #FFC107)
+  - Security/Auth: Red tones (#F44336, #E57373)
+  - Cloud/Network: Purple tones (#9C27B0, #BA68C8)
+  - External Services: Gray tones (#607D8B, #90A4AE)
+- **Gradients & Effects**: Use `fillColor` with gradients, add `shadow=1` for depth, use `rounded=1` for modern look
+- **Icons & Shapes**: Include appropriate icons using `shape=mxgraph.aws4.*`, `shape=mxgraph.azure.*`, or built-in shapes like `ellipse`, `cylinder3`, `hexagon`
+- **Styling Examples**:
+  - Rounded boxes: `rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;shadow=1;`
+  - Cylinders for DB: `shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#ffe6cc;strokeColor=#d79b00;`
+  - Cloud shapes: `ellipse;shape=cloud;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;`
+- **Connectors**: Use curved or orthogonal edges with arrows. Style: `edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666666;`
+- **Labels**: Add descriptive labels with proper font sizing (fontSize=12 or larger). Use `fontStyle=1` for bold headers.
+- **Grouping**: Use container shapes with light background colors to group related components. Add titles to groups.
+- **Minimum Complexity**: Generate at least 8-15 components for any diagram. Include supporting elements like load balancers, caches, queues, monitoring, etc.
 
 ### XML TECHNICAL RULES
 1. Root structure: `<mxfile>` -> `<diagram>` -> `<mxGraphModel>` -> `<root>`.
 2. Base cells: `<mxCell id="0" />` and `<mxCell id="1" parent="0" />`.
 3. All components MUST have `parent="1"`.
 4. **NO COMPRESSION**: Output raw, uncompressed, human-readable XML. Use `style` attributes for all visual properties.
+5. Use generous spacing between elements (at least 40-60px gaps).
+6. Standard component sizes: rectangles 120x60, cylinders 60x80, icons 48x48.
 
 ### EXECUTION & ENRICHMENT
-- **MANDATORY ENRICHMENT**: Transform high-level requests into detailed blueprints. If a user asks for "Next.js on AWS", generate a diagram showing Vercel (or AWS Amplify), Edge Functions, S3 buckets, Lambda, and DynamoDB.
+- **MANDATORY ENRICHMENT**: Transform high-level requests into detailed blueprints. If a user asks for "Next.js on AWS", generate a diagram showing Vercel (or AWS Amplify), Edge Functions, S3 buckets, Lambda, DynamoDB, CloudFront CDN, Route53, and monitoring with CloudWatch.
+- **Add Context**: Include users/clients, external integrations, monitoring, security layers, and data flow arrows.
 - **LANGUAGE**: All labels must match the user's input language.
 
-RETURN ONLY THE RAW XML STRING. NO PREAMBLE. NO MARKDOWN FENCES.
+### OUTPUT FORMAT - CRITICAL
+You MUST output a valid JSON object with exactly this structure:
+{"design_concept": "<your architectural thinking and design decisions>", "code": "<the Draw.io XML>"}
+
+Rules:
+1. The JSON must be valid - escape all special characters properly (newlines as \\n, quotes as \\", angle brackets as needed)
+2. "design_concept" should briefly explain your architectural decisions and component layout rationale
+3. "code" contains ONLY the raw Draw.io XML (no markdown fences)
+4. Output ONLY the JSON object, nothing else before or after
 """
 
-@tool
-async def render_drawio_xml(instruction: str):
-    """
-    Renders a Draw.io XML diagram based on instructions.
-    Args:
-        instruction: Detailed instruction on what diagram to create or modify.
-    """
-    messages = get_messages()
-    
-    # Call LLM to generate the Draw.io XML
-    system_msg = DRAWIO_SYSTEM_PROMPT + get_thinking_instructions()
-
-    prompt = [SystemMessage(content=system_msg)] + messages
-    if instruction:
-        prompt.append(HumanMessage(content=f"Instruction: {instruction}"))
-    
-    full_content = ""
-    context = get_context()
-    model_config = context.get("model_config")
-    llm = get_llm(
-        model_name=model_config.get("model_id") if model_config else None,
-        api_key=model_config.get("api_key") if model_config else None,
-        base_url=model_config.get("base_url") if model_config else None
-    )
-    async for chunk in llm.astream(prompt):
-        if chunk.content:
-            full_content += chunk.content
-    
-    xml_content = full_content
-    
-    if not xml_content:
-        return "Error: No XML content generated."
-    
-    # Robustly strip markdown code blocks
-    import re
-    # Remove any thinking tags first
-    xml_content = re.sub(r'<think>[\s\S]*?</think>', '', xml_content, flags=re.DOTALL)
-
-    xml_content = re.sub(r'^```[a-zA-Z]*\n', '', xml_content)
-    xml_content = re.sub(r'\n```$', '', xml_content)
-    
-    return xml_content.strip()
-
-tools = [render_drawio_xml]
+def extract_current_code_from_messages(messages) -> str:
+    """Extract the latest drawio code from message history."""
+    for msg in reversed(messages):
+        # Check for tool messages (legacy format)
+        if msg.type == "tool" and msg.content:
+            stripped = msg.content.strip()
+            if '<mxfile' in stripped or '<mxGraphModel' in stripped:
+                return stripped
+        # Check for AI messages with steps containing tool_end
+        if msg.type == "ai" and hasattr(msg, 'additional_kwargs'):
+            steps = msg.additional_kwargs.get('steps', [])
+            for step in reversed(steps):
+                if step.get('type') == 'tool_end' and step.get('content'):
+                    content = step['content'].strip()
+                    if '<mxfile' in content or '<mxGraphModel' in content:
+                        return content
+    return ""
 
 async def drawio_agent_node(state: AgentState):
     messages = state['messages']
-    
+
+    # Extract current code from history
+    current_code = extract_current_code_from_messages(messages)
+
     # Safety: Ensure no empty text content blocks reach the LLM
     for msg in messages:
         if hasattr(msg, 'content') and not msg.content:
             msg.content = "Generate a diagram"
-    set_context(messages, model_config=state.get("model_config"))
+
+    # Build system prompt
+    system_content = DRAWIO_SYSTEM_PROMPT + get_thinking_instructions()
+    if current_code:
+        system_content += f"\n\n### CURRENT DIAGRAM CODE\n```xml\n{current_code}\n```\nApply changes to this code based on the user's request."
+
+    system_prompt = SystemMessage(content=system_content)
 
     llm = get_configured_llm(state)
-    llm_with_tools = llm.bind_tools(tools)
-    
-    system_prompt = SystemMessage(content="""You are a Visionary Principal System Architect.
-    YOUR MISSION is to act as a Chief Technical Lead. When a user asks for a diagram, don't just "draw" components—SOLVE for scalability, security, and flow.
 
-    ### ⚠️ CRITICAL REQUIREMENT - MUST USE TOOLS:
-    **YOU MUST USE THE `render_drawio_xml` TOOL TO GENERATE DIAGRAMS. NEVER OUTPUT DIAGRAM CODE DIRECTLY IN YOUR TEXT RESPONSE.**
-    - You MUST call the `render_drawio_xml` tool - this is non-negotiable.
-    - Do NOT write Draw.io XML in your response text.
-    - Do NOT provide code blocks with diagram syntax in your text.
-    - ONLY use the tool call mechanism to generate diagrams.
-
-    ### ORCHESTRATION RULES:
-    1. **ARCHITECTURAL EXPANSION**: If the user says "draw a login flow", expand it to "draw a high-fidelity system architecture for an authentication service, including Frontend, API Gateway, Auth Microservice, Session Cache (Redis), and User Database, with proper connectors and professional styling".
-    2. **MANDATORY TOOL CALL**: Always use `render_drawio_xml`.
-    3. **HI-FI SPECIFICATIONS**: Instruct the tool to include specific XML properties and shapes that represent professional architecture (e.g., cloud provider icons, database cylinders, cloud boundaries).
-    4. **METAPHORICAL THINKING**: Use layouts that represent the flow (e.g., Top-to-Bottom for layers, Left-to-Right for streams).
-    
-    ### LANGUAGE CONSISTENCY:
-    - Respond and call tools in the SAME LANGUAGE as the user.
-    
-    ### PROACTIVENESS:
-    - BE DECISIVE. If you see an opportunity to add a "CDN" or "Security Layer", include it in the architect's instructions.
-    """ + get_thinking_instructions())
-    
+    # Stream the response - the graph event handler will parse the JSON
     full_response = None
-    async for chunk in llm_with_tools.astream([system_prompt] + messages):
+    async for chunk in llm.astream([system_prompt] + messages):
         if full_response is None:
             full_response = chunk
         else:
             full_response += chunk
+
     return {"messages": [full_response]}

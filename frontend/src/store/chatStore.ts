@@ -261,9 +261,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 const steps = [...msg.steps];
                 const lastStep = { ...steps[steps.length - 1] };
 
-                // GUARD: Never allow updateLastStepContent to change the type of an agent_select step
+                // GUARD: Never allow updateLastStepContent to change the type of an agent_select or design_concept step
                 if (type && lastStep.type === 'agent_select' && type !== 'agent_select') {
                     console.log("GUARD: Prevented updateLastStepContent from changing agent_select type");
+                    return {};
+                }
+                if (type && lastStep.type === 'design_concept' && type !== 'design_concept') {
+                    console.log("GUARD: Prevented updateLastStepContent from changing design_concept type");
                     return {};
                 }
 
@@ -280,6 +284,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 allMsgs[targetIdx] = msg;
 
                 // Sync to canvas if it's a tool_end OR during streaming for immediate feedback
+                // SKIP sync for design_concept steps - they don't affect the canvas
+                const isDesignConcept = type === 'design_concept' || lastStep.type === 'design_concept';
+                if (isDesignConcept) {
+                    // Rebuild messages list without canvas sync
+                    const turnMap: Record<number, Message[]> = {};
+                    allMsgs.forEach(m => {
+                        const turn = m.turn_index || 0;
+                        if (!turnMap[turn]) turnMap[turn] = [];
+                        turnMap[turn].push(m);
+                    });
+                    const sortedTurns = Object.keys(turnMap).map(Number).sort((a, b) => a - b);
+                    const newMessages: Message[] = [];
+                    sortedTurns.forEach(turn => {
+                        const siblings = turnMap[turn];
+                        const selectedId = state.selectedVersions[turn];
+                        const selected = siblings.find(s => s.id === selectedId) || siblings[siblings.length - 1];
+                        newMessages.push(selected);
+                    });
+                    return { allMessages: allMsgs, messages: newMessages };
+                }
+
                 const currentCanvasState = getCanvasState();
                 const currentAgent = msg.agent || state.activeAgent;
                 const isStreamingAgent = currentAgent === 'mindmap' || currentAgent === 'infographic';
