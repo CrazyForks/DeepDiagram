@@ -19,18 +19,33 @@ MINDMAP_SYSTEM_PROMPT = """You are a World-Class Strategic Thinking Partner and 
 - **INSIGHTFUL ADDITIONS**: Proactively add "Risks", "Opportunities", or "Best Practices" branches if relevant to the topic.
 - **LANGUAGE**: Match user's input language.
 
-### OUTPUT FORMAT - CRITICAL
-You MUST output a valid JSON object with exactly this structure:
-{"design_concept": "<your design thinking and approach>", "code": "<the markdown mindmap code>"}
+### OUTPUT FORMAT
+Output your response using these XML-style tags:
 
-Rules:
-1. The JSON must be valid - use standard JSON escaping for the string values
-2. "design_concept" should briefly explain your knowledge architecture decisions and categorization rationale
-3. "code" contains the Markdown mindmap with proper JSON string escaping (no code fences)
-4. Output ONLY the JSON object, nothing else before or after
+<design_concept>
+Your knowledge architecture decisions and categorization rationale here (1-3 sentences)
+</design_concept>
 
-Example output (note: this is a simplified example):
-{"design_concept": "Organized Python ecosystem into core pillars.", "code": "# Python\\n## Core Language\\n- Syntax\\n- Data Types\\n## Libraries\\n- NumPy\\n- Pandas"}
+<code>
+The Markdown mindmap code here (raw markdown, no code fences)
+</code>
+
+Example output:
+<design_concept>
+Organized Python ecosystem into core pillars covering language fundamentals, popular libraries, and deployment patterns.
+</design_concept>
+
+<code>
+# Python
+## Core Language
+- Syntax
+- Data Types
+## Libraries
+- NumPy
+- Pandas
+</code>
+
+Output ONLY these two tags, nothing else.
 """
 
 def extract_current_code_from_messages(messages) -> str:

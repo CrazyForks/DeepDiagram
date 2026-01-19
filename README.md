@@ -62,7 +62,9 @@
 - **Powered by**: `AntV Infographic`
 - **Capabilities**: Creates professional digital infographics, data posters, and visual summaries using declarative DSL
 - **Use Cases**: Data storytelling, visual summaries, creative presentations
-- **Workflow**: Rich built-in templates with high-quality SVG rendering
+- **Workflow**: Two-phase intelligent pipeline:
+  1. **Template Selection**: LLM analyzes user intent and selects optimal template from 50+ options (chart, compare, hierarchy, list, relation, sequence)
+  2. **Code Generation**: Template-specific prompts with syntax rules generate precise DSL code
 
 ![Infographic Agent Demo](./images/20260107-173449.gif)
 
@@ -70,12 +72,12 @@
 
 ## ✨ Advanced Features
 
-### 🤖 Intelligent Router & Direct JSON Output
+### 🤖 Intelligent Router & XML Tag Output
 - **Context-Aware Routing**: Automatically routes requests to the optimal agent based on:
   - Explicit mentions (e.g., `@mindmap`, `@flow`, `@charts`)
   - LLM intent recognition with full agent capability descriptions
   - Conversation context (prefers last active agent for continuity)
-- **Direct JSON Output**: Each agent outputs `{"design_concept": "...", "code": "..."}` directly without tool calls
+- **XML Tag Output**: Each agent outputs `<design_concept>...</design_concept><code>...</code>` directly without tool calls, enabling cleaner parsing and multi-line content support
 - **Multimodal Support**: Upload whiteboards, sketches, or technical diagrams for digitization
 
 ### 💡 Design Concept Streaming
@@ -116,14 +118,14 @@
 
 ## 🏗 System Architecture
 
-DeepDiagram AI uses a **React 19 + FastAPI** architecture, orchestrated by **LangGraph**. Each specialized agent directly outputs structured JSON with `design_concept` and `code` fields, streamed to the frontend via **SSE (Server-Sent Events)** for real-time preview.
+DeepDiagram AI uses a **React 19 + FastAPI** architecture, orchestrated by **LangGraph**. Each specialized agent directly outputs structured content with XML-style `<design_concept>` and `<code>` tags, streamed to the frontend via **SSE (Server-Sent Events)** for real-time preview.
 
 ```mermaid
 graph TD
     Input[User Request: Text/Images/Documents] --> Router[Intelligent Router]
     Router -- Intent Classification --> Graph[LangGraph Orchestrator]
 
-    subgraph Agents [Specialized Agents - Direct JSON Output]
+    subgraph Agents [Specialized Agents - XML Tag Output]
         AgentMM[MindMap Agent<br/>Markdown/Markmap]
         AgentFlow[Flowchart Agent<br/>React Flow JSON]
         AgentChart[Data Chart Agent<br/>ECharts Config]
@@ -135,9 +137,9 @@ graph TD
 
     Graph -->|Route by Intent| Agents
 
-    subgraph Output [Streaming JSON Output]
-        Agents -->|LLM Generation| JSON["{ design_concept, code }"]
-        JSON -->|Parse & Stream| Parser[StreamingJsonParser]
+    subgraph Output [Streaming XML Tag Output]
+        Agents -->|LLM Generation| Tags["&lt;design_concept&gt;...&lt;/design_concept&gt;<br/>&lt;code&gt;...&lt;/code&gt;"]
+        Tags -->|Parse & Stream| Parser[StreamingTagParser]
     end
 
     Parser -->|design_concept events| DC[Design Concept Stream]
@@ -151,15 +153,15 @@ graph TD
 
     style Input fill:#f9f,stroke:#333
     style Router fill:#bbf,stroke:#333
-    style JSON fill:#bfb,stroke:#333
+    style Tags fill:#bfb,stroke:#333
     style Canvas fill:#fdf,stroke:#333
     style DC fill:#ffc,stroke:#333
 ```
 
 ### Architecture Highlights
 
-- **No Tool Calls**: Agents directly output JSON `{"design_concept": "...", "code": "..."}` without intermediate tool invocations
-- **Streaming JSON Parser**: Real-time parsing of partial JSON with proper escape sequence handling
+- **No Tool Calls**: Agents directly output XML tags `<design_concept>...</design_concept><code>...</code>` without intermediate tool invocations
+- **Streaming Tag Parser**: Real-time parsing of XML-style tags with state machine for robust multi-line content handling
 - **Dual-Stream Output**: `design_concept` (AI reasoning) and `code` (diagram content) stream independently
 - **Design Concept UI**: Yellow collapsible panel shows AI's design thinking before rendering
 
@@ -168,7 +170,7 @@ graph TD
 **Backend (Python)**
 - `dispatcher.py`: Intent-based routing with explicit `@agent` tags and LLM fallback
 - `graph.py`: LangGraph state machine with Router → Agent → END flow
-- `routes.py`: SSE endpoint with `StreamingJsonParser` for real-time JSON parsing
+- `routes.py`: SSE endpoint with `StreamingTagParser` for real-time XML tag parsing
 - `file_service.py`: Concurrent document parsing and LLM extraction
 - `chat.py`: Session and message CRUD with branching support
 - SQLModel ORM with async PostgreSQL driver
@@ -319,7 +321,7 @@ Or configure interactively in the UI:
 - [x] SSE Real-Time Streaming
 - [x] Execution Trace Visualization
 - [x] UI/UX Polishing (Responsive Tables, Loading States)
-- [x] Direct JSON Output (No Tool Calls)
+- [x] XML Tag Output (No Tool Calls)
 - [x] Design Concept Streaming with AI Reasoning Visibility
 - [ ] Collaborative Editing (Real-time Sync via WebSockets)
 - [ ] Custom Agent Plugin System

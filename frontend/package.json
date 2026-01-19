@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@antv/infographic": "^0.2.6",
+    "@antv/infographic": "^0.2.11",
     "@tailwindcss/postcss": "^4.1.17",
     "clsx": "^2.1.1",
     "echarts": "^6.0.0",

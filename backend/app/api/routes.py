@@ -30,10 +30,9 @@ class ChatRequest(BaseModel):
     base_url: str | None = None
 
 
-class StreamingJsonParser:
-    """Parse streaming JSON output with design_concept and code fields.
+class StreamingTagParser:
+    """Parse streaming output with <design_concept> and <code> XML-style tags.
 
-    Uses simple regex to determine current streaming state.
     State transitions: INIT -> DESIGN_CONCEPT -> CODE -> DONE
     """
 
@@ -56,36 +55,30 @@ class StreamingJsonParser:
         self.buffer += chunk
         events = []
 
-        # Determine state by checking what patterns exist in buffer
-        has_dc_start = '"design_concept"' in self.buffer
-        has_code_start = '"code"' in self.buffer
+        # Check for tag positions
+        dc_start_tag = '<design_concept>'
+        dc_end_tag = '</design_concept>'
+        code_start_tag = '<code>'
+        code_end_tag = '</code>'
 
-        # Check if design_concept value has started (found opening quote after key)
-        dc_value_started = False
-        if has_dc_start:
-            dc_match = re.search(r'"design_concept"\s*:\s*"', self.buffer)
-            dc_value_started = dc_match is not None
+        dc_start_pos = self.buffer.find(dc_start_tag)
+        dc_end_pos = self.buffer.find(dc_end_tag)
+        code_start_pos = self.buffer.find(code_start_tag)
+        code_end_pos = self.buffer.find(code_end_tag)
 
-        # Check if code value has started
-        code_value_started = False
-        if has_code_start:
-            code_match = re.search(r'"code"\s*:\s*"', self.buffer)
-            code_value_started = code_match is not None
-
-        # State: INIT -> waiting for design_concept
+        # State: INIT -> waiting for design_concept tag
         if self.state == self.STATE_INIT:
-            if dc_value_started:
+            if dc_start_pos != -1:
                 self.state = self.STATE_DESIGN_CONCEPT
                 events.append(('design_concept_start', '', True))
 
         # State: DESIGN_CONCEPT -> streaming design_concept content
         if self.state == self.STATE_DESIGN_CONCEPT:
-            # Extract current design_concept content
-            dc_content = self._extract_value_content('design_concept')
-            if dc_content is not None:
-                # Check if design_concept is complete (code field started)
-                if code_value_started:
+            if dc_start_pos != -1:
+                content_start = dc_start_pos + len(dc_start_tag)
+                if dc_end_pos != -1:
                     # design_concept is complete
+                    dc_content = self.buffer[content_start:dc_end_pos].strip()
                     if len(dc_content) > self.last_dc_len:
                         new_content = dc_content[self.last_dc_len:]
                         self.last_dc_len = len(dc_content)
@@ -93,9 +86,11 @@ class StreamingJsonParser:
                         events.append(('design_concept', new_content, False))
                     events.append(('design_concept_end', '', False))
                     self.state = self.STATE_CODE
-                    events.append(('code_start', '', True))
+                    if code_start_pos != -1:
+                        events.append(('code_start', '', True))
                 else:
                     # Still streaming design_concept
+                    dc_content = self.buffer[content_start:].strip()
                     if len(dc_content) > self.last_dc_len:
                         new_content = dc_content[self.last_dc_len:]
                         self.last_dc_len = len(dc_content)
@@ -104,136 +99,100 @@ class StreamingJsonParser:
 
         # State: CODE -> streaming code content
         if self.state == self.STATE_CODE:
-            code_content = self._extract_value_content('code')
-            if code_content is not None and len(code_content) > self.last_code_len:
-                new_content = code_content[self.last_code_len:]
-                self.last_code_len = len(code_content)
-                self.code = code_content
-                events.append(('code', new_content, True))
+            if code_start_pos != -1:
+                content_start = code_start_pos + len(code_start_tag)
+                if code_end_pos != -1:
+                    # code is complete
+                    code_content = self.buffer[content_start:code_end_pos].strip()
+                    if len(code_content) > self.last_code_len:
+                        new_content = code_content[self.last_code_len:]
+                        self.last_code_len = len(code_content)
+                        self.code = code_content
+                        events.append(('code', new_content, False))
+                    events.append(('code_end', '', False))
+                    self.state = self.STATE_DONE
+                else:
+                    # Still streaming code
+                    code_content = self.buffer[content_start:].strip()
+                    if len(code_content) > self.last_code_len:
+                        new_content = code_content[self.last_code_len:]
+                        self.last_code_len = len(code_content)
+                        self.code = code_content
+                        events.append(('code', new_content, True))
 
         return events
-
-    def _extract_value_content(self, field_name: str) -> str | None:
-        """Extract the current content of a field value (may be incomplete)."""
-        # Find field start: "field_name": "
-        pattern = f'"{field_name}"\\s*:\\s*"'
-        match = re.search(pattern, self.buffer)
-        if not match:
-            return None
-
-        start_idx = match.end()  # Position right after opening quote
-
-        # Find the content - scan for unescaped closing quote or end of buffer
-        content = []
-        i = start_idx
-        while i < len(self.buffer):
-            char = self.buffer[i]
-            if char == '\\':
-                if i + 1 >= len(self.buffer):
-                    # Incomplete escape sequence at end of buffer, stop here
-                    break
-                # Escape sequence - decode it
-                next_char = self.buffer[i + 1]
-                if next_char == 'n':
-                    content.append('\n')
-                elif next_char == 't':
-                    content.append('\t')
-                elif next_char == 'r':
-                    content.append('\r')
-                elif next_char == '"':
-                    content.append('"')
-                elif next_char == '\\':
-                    content.append('\\')
-                elif next_char == '/':
-                    content.append('/')
-                elif next_char == 'u':
-                    # Unicode escape \uXXXX
-                    if i + 5 < len(self.buffer):
-                        hex_str = self.buffer[i+2:i+6]
-                        try:
-                            content.append(chr(int(hex_str, 16)))
-                            i += 6
-                            continue
-                        except ValueError:
-                            content.append('\\u')
-                            i += 2
-                            continue
-                    else:
-                        # Incomplete unicode escape
-                        break
-                else:
-                    # Unknown escape, just keep the character after backslash
-                    content.append(next_char)
-                i += 2
-            elif char == '"':
-                # End of string value
-                break
-            else:
-                content.append(char)
-                i += 1
-
-        return ''.join(content)
 
     def finalize(self) -> list:
         """Finalize parsing and emit any remaining events."""
         events = []
 
+        dc_start_tag = '<design_concept>'
+        dc_end_tag = '</design_concept>'
+        code_start_tag = '<code>'
+        code_end_tag = '</code>'
+
         # If still in design_concept state, close it
         if self.state == self.STATE_DESIGN_CONCEPT:
-            dc_content = self._extract_value_content('design_concept')
-            if dc_content and len(dc_content) > self.last_dc_len:
-                new_content = dc_content[self.last_dc_len:]
-                self.design_concept = dc_content
-                events.append(('design_concept', new_content, False))
+            dc_start_pos = self.buffer.find(dc_start_tag)
+            dc_end_pos = self.buffer.find(dc_end_tag)
+            if dc_start_pos != -1:
+                content_start = dc_start_pos + len(dc_start_tag)
+                content_end = dc_end_pos if dc_end_pos != -1 else len(self.buffer)
+                dc_content = self.buffer[content_start:content_end].strip()
+                if len(dc_content) > self.last_dc_len:
+                    new_content = dc_content[self.last_dc_len:]
+                    self.design_concept = dc_content
+                    events.append(('design_concept', new_content, False))
             events.append(('design_concept_end', '', False))
-
-            # Check if code exists
-            if '"code"' in self.buffer:
-                self.state = self.STATE_CODE
+            self.state = self.STATE_CODE
+            if code_start_tag in self.buffer:
                 events.append(('code_start', '', False))
 
         # If in code state, finalize code
         if self.state == self.STATE_CODE:
-            code_content = self._extract_value_content('code')
-            if code_content and len(code_content) > self.last_code_len:
-                new_content = code_content[self.last_code_len:]
-                self.code = code_content
-                events.append(('code', new_content, False))
+            code_start_pos = self.buffer.find(code_start_tag)
+            code_end_pos = self.buffer.find(code_end_tag)
+            if code_start_pos != -1:
+                content_start = code_start_pos + len(code_start_tag)
+                content_end = code_end_pos if code_end_pos != -1 else len(self.buffer)
+                code_content = self.buffer[content_start:content_end].strip()
+                if len(code_content) > self.last_code_len:
+                    new_content = code_content[self.last_code_len:]
+                    self.code = code_content
+                    events.append(('code', new_content, False))
             events.append(('code_end', '', False))
             self.state = self.STATE_DONE
 
         return events
 
 
-def extract_json_fields(content: str) -> tuple[str, str]:
-    """Extract design_concept and code from complete JSON response."""
+# Keep old name as alias for compatibility
+StreamingJsonParser = StreamingTagParser
+
+
+def extract_tag_fields(content: str) -> tuple[str, str]:
+    """Extract design_concept and code from XML-style tagged response."""
     design_concept = ""
     code = ""
 
     # Remove thinking tags if present
     content = re.sub(r'<think>[\s\S]*?</think>', '', content, flags=re.DOTALL)
 
-    # Try to find JSON object
-    try:
-        # Find the JSON object boundaries
-        start_idx = content.find('{')
-        end_idx = content.rfind('}')
-        if start_idx != -1 and end_idx != -1:
-            json_str = content[start_idx:end_idx+1]
-            parsed = json.loads(json_str)
-            design_concept = parsed.get('design_concept', '')
-            code = parsed.get('code', '')
-    except json.JSONDecodeError:
-        # If JSON parsing fails, try regex extraction
-        dc_match = re.search(r'"design_concept"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,', content, re.DOTALL)
-        if dc_match:
-            design_concept = dc_match.group(1).replace('\\n', '\n').replace('\\"', '"')
+    # Extract design_concept
+    dc_match = re.search(r'<design_concept>\s*([\s\S]*?)\s*</design_concept>', content)
+    if dc_match:
+        design_concept = dc_match.group(1).strip()
 
-        code_match = re.search(r'"code"\s*:\s*"((?:[^"\\]|\\.)*)"', content, re.DOTALL)
-        if code_match:
-            code = code_match.group(1).replace('\\n', '\n').replace('\\"', '"')
+    # Extract code
+    code_match = re.search(r'<code>\s*([\s\S]*?)\s*</code>', content)
+    if code_match:
+        code = code_match.group(1).strip()
 
     return design_concept, code
+
+
+# Keep old name as alias for compatibility
+extract_json_fields = extract_tag_fields
 
 
 async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenerator[str, None]:

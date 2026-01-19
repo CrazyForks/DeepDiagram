@@ -62,7 +62,9 @@
 - **核心驱动**: `AntV Infographic`
 - **能力**: 使用声明式 DSL 语法创建专业的数字信息图、数据海报和视觉摘要
 - **应用场景**: 数据叙事、视觉总结、创意演示
-- **工作流**: 内置丰富模板，支持高质量 SVG 渲染
+- **工作流**: 两阶段智能流水线：
+  1. **模板选择**: LLM 分析用户意图，从 50+ 模板中选择最优模板（chart、compare、hierarchy、list、relation、sequence）
+  2. **代码生成**: 基于模板特定的 Prompt 和语法规则生成精确的 DSL 代码
 
 ![Infographic 演示](./images/20260107-173449.gif)
 
@@ -70,12 +72,12 @@
 
 ## ✨ 高级特性
 
-### 🤖 智能路由与直接 JSON 输出
+### 🤖 智能路由与 XML 标签输出
 - **上下文感知路由**: 根据以下条件自动将请求路由到最优智能体：
   - 显式标签（如 `@mindmap`、`@flow`、`@charts`）
   - LLM 意图识别，提供完整的智能体能力描述
   - 对话上下文（优先使用上一次激活的智能体以保持连续性）
-- **直接 JSON 输出**: 每个智能体直接输出 `{"design_concept": "...", "code": "..."}`，无需工具调用
+- **XML 标签输出**: 每个智能体直接输出 `<design_concept>...</design_concept><code>...</code>`，无需工具调用，支持更清晰的解析和多行内容
 - **多模态支持**: 上传白板、草图或技术图表进行数字化处理
 
 ### 💡 设计思路流式输出
@@ -116,14 +118,14 @@
 
 ## 🏗 系统架构
 
-DeepDiagram AI 使用 **React 19 + FastAPI** 架构，由 **LangGraph** 进行编排。每个专业智能体直接输出包含 `design_concept` 和 `code` 字段的结构化 JSON，通过 **SSE（服务器推送事件）** 流式传输到前端，实现实时预览体验。
+DeepDiagram AI 使用 **React 19 + FastAPI** 架构，由 **LangGraph** 进行编排。每个专业智能体直接输出包含 XML 风格的 `<design_concept>` 和 `<code>` 标签的结构化内容，通过 **SSE（服务器推送事件）** 流式传输到前端，实现实时预览体验。
 
 ```mermaid
 graph TD
     Input[用户请求: 文本/图片/文档] --> Router[智能路由]
     Router -- 意图分类 --> Graph[LangGraph 编排层]
 
-    subgraph Agents [专业智能体 - 直接 JSON 输出]
+    subgraph Agents [专业智能体 - XML 标签输出]
         AgentMM[思维导图智能体<br/>Markdown/Markmap]
         AgentFlow[流程图智能体<br/>React Flow JSON]
         AgentChart[数据图表智能体<br/>ECharts 配置]
@@ -135,9 +137,9 @@ graph TD
 
     Graph -->|按意图路由| Agents
 
-    subgraph Output [流式 JSON 输出]
-        Agents -->|LLM 生成| JSON["{ design_concept, code }"]
-        JSON -->|解析与流式传输| Parser[StreamingJsonParser]
+    subgraph Output [流式 XML 标签输出]
+        Agents -->|LLM 生成| Tags["&lt;design_concept&gt;...&lt;/design_concept&gt;<br/>&lt;code&gt;...&lt;/code&gt;"]
+        Tags -->|解析与流式传输| Parser[StreamingTagParser]
     end
 
     Parser -->|design_concept 事件| DC[设计思路流]
@@ -151,15 +153,15 @@ graph TD
 
     style Input fill:#f9f,stroke:#333
     style Router fill:#bbf,stroke:#333
-    style JSON fill:#bfb,stroke:#333
+    style Tags fill:#bfb,stroke:#333
     style Canvas fill:#fdf,stroke:#333
     style DC fill:#ffc,stroke:#333
 ```
 
 ### 架构亮点
 
-- **无工具调用**: 智能体直接输出 JSON `{"design_concept": "...", "code": "..."}`，无需中间工具调用
-- **流式 JSON 解析器**: 实时解析部分 JSON，正确处理转义序列
+- **无工具调用**: 智能体直接输出 XML 标签 `<design_concept>...</design_concept><code>...</code>`，无需中间工具调用
+- **流式标签解析器**: 基于状态机的实时解析，稳健处理多行内容
 - **双流输出**: `design_concept`（AI 推理）和 `code`（图表内容）独立流式传输
 - **设计思路 UI**: 黄色可折叠面板，在渲染前展示 AI 的设计思维
 
@@ -168,7 +170,7 @@ graph TD
 **后端（Python）**
 - `dispatcher.py`: 基于意图的路由，支持显式 `@agent` 标签和 LLM 回退
 - `graph.py`: LangGraph 状态机，Router → Agent → END 流程
-- `routes.py`: SSE 端点，包含 `StreamingJsonParser` 实现实时 JSON 解析
+- `routes.py`: SSE 端点，包含 `StreamingTagParser` 实现实时 XML 标签解析
 - `file_service.py`: 并发文档解析和 LLM 提取
 - `chat.py`: 会话和消息 CRUD，支持分支功能
 - SQLModel ORM，配合异步 PostgreSQL 驱动
@@ -319,7 +321,7 @@ MODEL_ID=your-model-name
 - [x] SSE 实时流式传输
 - [x] 执行轨迹可视化
 - [x] UI/UX 优化（响应式表格、加载状态）
-- [x] 直接 JSON 输出（无工具调用）
+- [x] XML 标签输出（无工具调用）
 - [x] 设计思路流式输出，AI 推理过程可见
 - [ ] 协同编辑（通过 WebSocket 实时同步）
 - [ ] 自定义智能体插件系统

@@ -4,8 +4,6 @@ import { BrainCircuit, Terminal, CheckCircle, ChevronDown, ChevronRight, Activit
 import { ThinkingPanel } from './common/ThinkingPanel';
 import { useChatStore } from '../store/chatStore';
 import type { Step } from '../types';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 // Design Concept Item - Yellow card that auto-collapses when done
 const DesignConceptItem = ({ step }: { step: Step }) => {
@@ -80,11 +78,9 @@ const DesignConceptItem = ({ step }: { step: Step }) => {
             {isExpanded && (
                 <div className="px-2 pb-2 overflow-hidden animate-in slide-in-from-top-1 duration-200">
                     <div ref={scrollRef} className="bg-white/50 rounded border border-amber-200 p-2 overflow-y-auto max-h-[200px] custom-scrollbar">
-                        <div className="prose prose-amber prose-sm max-w-none prose-p:my-1 text-[11px] leading-relaxed">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {preservedContent}
-                            </ReactMarkdown>
-                        </div>
+                        <pre className="text-[11px] leading-relaxed text-amber-900 whitespace-pre-wrap break-words font-sans">
+                            {preservedContent}
+                        </pre>
                     </div>
                 </div>
             )}
@@ -139,16 +135,6 @@ const StepItem = ({ step, activeAgent, messageIndex, associatedResult, onRetry, 
     }
 
     const hasContent = !!step.content;
-
-    const formatContent = (content?: string) => {
-        if (!content) return '';
-        try {
-            const parsed = JSON.parse(content);
-            return JSON.stringify(parsed, null, 2);
-        } catch (e) {
-            return content;
-        }
-    };
 
     return (
         <div className={cn(
@@ -295,26 +281,9 @@ const StepItem = ({ step, activeAgent, messageIndex, associatedResult, onRetry, 
                                                 </div>
                                             )}
                                             <div ref={scrollRef} className="p-2 overflow-y-auto max-h-[300px] custom-scrollbar">
-                                                {(() => {
-                                                    const content = formatContent(block.content);
-                                                    const isJson = content !== block.content;
-
-                                                    if (isJson) {
-                                                        return (
-                                                            <pre className="text-[10px] leading-tight text-slate-700 whitespace-pre break-words font-medium">
-                                                                {content}
-                                                            </pre>
-                                                        );
-                                                    }
-
-                                                    return (
-                                                        <div className="prose prose-slate prose-sm max-w-none prose-p:my-0 prose-pre:bg-slate-900 prose-pre:text-white prose-table:border-collapse prose-table:border prose-table:border-slate-300 prose-td:border prose-td:border-slate-300 prose-td:p-1 prose-th:border prose-th:border-slate-300 prose-th:p-1 prose-th:bg-slate-100 text-[10px]">
-                                                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                                                {block.content}
-                                                            </ReactMarkdown>
-                                                        </div>
-                                                    );
-                                                })()}
+                                                <pre className="text-[10px] leading-tight text-slate-700 whitespace-pre-wrap break-words font-mono">
+                                                    {block.content}
+                                                </pre>
                                             </div>
                                         </div>
                                     );
