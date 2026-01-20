@@ -616,9 +616,11 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
 
             # 4. Save Assistant Message (Normal completion)
             if full_response_content or accumulated_steps:
+                # For general agent, save full_response_content; for other agents, content is in steps
+                content_to_save = full_response_content if selected_agent == "general" else ""
                 assistant_msg = await chat_service.add_message(
                     session_id, "assistant",
-                    "",  # We don't store the raw JSON in content anymore
+                    content_to_save,
                     steps=accumulated_steps,
                     agent=selected_agent,
                     parent_id=last_user_msg_id
