@@ -195,6 +195,25 @@ def extract_tag_fields(content: str) -> tuple[str, str]:
 extract_json_fields = extract_tag_fields
 
 
+def sanitize_drawio_xml(xml_content: str) -> str:
+    """Remove invalid <Array> elements from Draw.io XML that cause parsing errors."""
+    if not xml_content or '<mxfile' not in xml_content:
+        return xml_content
+
+    # Remove <Array .../> elements (self-closing) - handles multiline
+    xml_content = re.sub(r'<Array[^/>]*?/>', '', xml_content, flags=re.DOTALL)
+    # Remove <Array ...>...</Array> elements (with content)
+    xml_content = re.sub(r'<Array[^>]*>[\s\S]*?</Array>', '', xml_content)
+    # Remove standalone <Array points="..."/> patterns with various whitespace
+    xml_content = re.sub(r'\s*<Array\s+points="[^"]*"\s*/>\s*', '', xml_content)
+    # Clean up any resulting empty lines inside mxGeometry
+    xml_content = re.sub(r'(<mxGeometry[^>]*>)\s+(</(mxGeometry|mxCell)>)', r'\1\2', xml_content)
+    # Clean up multiple newlines
+    xml_content = re.sub(r'\n\s*\n\s*\n', '\n\n', xml_content)
+
+    return xml_content
+
+
 async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenerator[str, None]:
     chat_service = ChatService(db)
 
@@ -584,6 +603,9 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
                         yield f"event: tool_code\ndata: {json.dumps({'content': evt_content, 'session_id': session_id})}\n\n"
                     elif evt_type == 'code_end':
                         final_code = json_parser.code
+                        # Sanitize Draw.io XML to remove invalid <Array> elements
+                        if selected_agent == 'drawio':
+                            final_code = sanitize_drawio_xml(final_code)
                         accumulated_steps.append({
                             "type": "tool_end",
                             "name": f"create_{selected_agent}",
@@ -605,6 +627,9 @@ async def event_generator(request: ChatRequest, db: AsyncSession) -> AsyncGenera
                                 "status": "done",
                                 "timestamp": int(datetime.utcnow().timestamp() * 1000)
                             })
+                        # Sanitize Draw.io XML to remove invalid <Array> elements
+                        if selected_agent == 'drawio':
+                            code = sanitize_drawio_xml(code)
                         accumulated_steps.append({
                             "type": "tool_end",
                             "name": f"create_{selected_agent}",

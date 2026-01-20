@@ -895,10 +895,9 @@ export const ChatPanel = () => {
                                     const lastStepEnd = lastMsgEnd?.steps?.[lastMsgEnd.steps.length - 1];
 
                                     if (lastStepEnd?.isStreaming) {
+                                        // IMPORTANT: Prefer data.output (sanitized by backend) over streamed content
+                                        // The backend sanitizes Draw.io XML to remove invalid <Array> elements
                                         let finalContent = data.output || lastStepEnd.content || '';
-                                        if (lastStepEnd.type === 'tool_end' && lastStepEnd.content) {
-                                            finalContent = lastStepEnd.content;
-                                        }
                                         updateLastStepContent(finalContent, false, 'done', lastStepEnd.type, false, eventSessionId);
                                     }
                                     break;

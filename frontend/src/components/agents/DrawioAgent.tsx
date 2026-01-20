@@ -3,6 +3,26 @@ import { useChatStore } from '../../store/chatStore';
 import { cleanContent } from '../../lib/utils';
 import type { AgentRef, AgentProps } from './types';
 
+/**
+ * Sanitize Draw.io XML by removing invalid <Array> elements.
+ * The LLM sometimes generates <Array points="..."/> which Draw.io cannot parse.
+ * Draw.io expects edge waypoints to be auto-routed, not manually specified.
+ */
+function sanitizeDrawioXml(xml: string): string {
+    if (!xml || !xml.includes('<mxfile') && !xml.includes('<mxGraphModel')) {
+        return xml;
+    }
+    // Remove <Array .../> self-closing elements
+    let cleaned = xml.replace(/<Array[^/>]*\/>/g, '');
+    // Remove <Array ...>...</Array> elements with content
+    cleaned = cleaned.replace(/<Array[^>]*>[\s\S]*?<\/Array>/g, '');
+    // Clean up empty mxGeometry elements that may result
+    cleaned = cleaned.replace(/(<mxGeometry[^>]*>)\s*(<\/mxGeometry>)/g, '$1$2');
+    // Clean up extra whitespace within mxGeometry
+    cleaned = cleaned.replace(/(<mxGeometry[^>]*>)\s+(<\/(mxGeometry|mxCell)>)/g, '$1$2');
+    return cleaned;
+}
+
 export const DrawioAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) => {
     const { isStreamingCode } = useChatStore();
     let currentCode = cleanContent(content);
@@ -105,6 +125,9 @@ export const DrawioAgent = forwardRef<AgentRef, AgentProps>(({ content }, ref) =
             }
 
             if (cleanXml.startsWith('<')) {
+                // Sanitize XML to remove invalid <Array> elements that cause parsing errors
+                cleanXml = sanitizeDrawioXml(cleanXml);
+
                 const win = drawioIframeRef.current.contentWindow;
                 win?.postMessage(JSON.stringify({
                     action: 'load',
